@@ -2,12 +2,8 @@ whatsapp:
   store_path: "whatsapp.db"
   log_level: "INFO"
 
-agent:
-  name: "whatsapp_assistant"
-  description: "A helpful WhatsApp assistant powered by Google Gemini"
-  instruction: |
-    You are a helpful AI assistant responding via WhatsApp.
-    Be concise, friendly, and helpful.
-    Keep responses short and to the point as they will be read on a mobile device.
-  model: "gemini-2.5-flash"
-  # api_key: set via GOOGLE_API_KEY environment variable
+adk:
+  endpoint: "http://localhost:8000"
+  app_name: "my_agent"
+  streaming: false
+  # api_key: set via ADK_API_KEY environment variable for authenticated endpoints

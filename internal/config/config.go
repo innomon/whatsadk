@@ -10,7 +10,7 @@ import (
 
 type Config struct {
 	WhatsApp WhatsAppConfig `yaml:"whatsapp"`
-	Agent    AgentConfig    `yaml:"agent"`
+	ADK      ADKConfig      `yaml:"adk"`
 }
 
 type WhatsAppConfig struct {
@@ -18,12 +18,11 @@ type WhatsAppConfig struct {
 	LogLevel  string `yaml:"log_level"`
 }
 
-type AgentConfig struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
-	Instruction string `yaml:"instruction"`
-	Model       string `yaml:"model"`
-	APIKey      string `yaml:"api_key"`
+type ADKConfig struct {
+	Endpoint  string `yaml:"endpoint"`
+	AppName   string `yaml:"app_name"`
+	Streaming bool   `yaml:"streaming"`
+	APIKey    string `yaml:"api_key"`
 }
 
 func Load() (*Config, error) {
@@ -95,22 +94,22 @@ func (c *Config) applyDefaults() {
 	if c.WhatsApp.LogLevel == "" {
 		c.WhatsApp.LogLevel = "INFO"
 	}
-	if c.Agent.Name == "" {
-		c.Agent.Name = "whatsapp_assistant"
+	if c.ADK.Endpoint == "" {
+		c.ADK.Endpoint = "http://localhost:8000"
 	}
-	if c.Agent.Description == "" {
-		c.Agent.Description = "A helpful WhatsApp assistant powered by AI"
-	}
-	if c.Agent.Instruction == "" {
-		c.Agent.Instruction = "You are a helpful assistant responding via WhatsApp. Be concise and friendly."
-	}
-	if c.Agent.Model == "" {
-		c.Agent.Model = "gemini-2.5-flash"
+	if c.ADK.AppName == "" {
+		c.ADK.AppName = "my_agent"
 	}
 }
 
 func (c *Config) applyEnvOverrides() {
-	if apiKey := os.Getenv("GOOGLE_API_KEY"); apiKey != "" {
-		c.Agent.APIKey = apiKey
+	if endpoint := os.Getenv("ADK_ENDPOINT"); endpoint != "" {
+		c.ADK.Endpoint = endpoint
+	}
+	if appName := os.Getenv("ADK_APP_NAME"); appName != "" {
+		c.ADK.AppName = appName
+	}
+	if apiKey := os.Getenv("ADK_API_KEY"); apiKey != "" {
+		c.ADK.APIKey = apiKey
 	}
 }

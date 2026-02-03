@@ -22,12 +22,12 @@ import (
 )
 
 type Client struct {
-	wac     *whatsmeow.Client
-	gateway *agent.Gateway
-	log     waLog.Logger
+	wac       *whatsmeow.Client
+	adkClient *agent.Client
+	log       waLog.Logger
 }
 
-func New(ctx context.Context, cfg *config.Config, gateway *agent.Gateway) (*Client, error) {
+func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client) (*Client, error) {
 	log := waLog.Stdout("WhatsApp", cfg.WhatsApp.LogLevel, true)
 
 	container, err := sqlstore.New(ctx, "sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on", cfg.WhatsApp.StorePath), log)
@@ -43,9 +43,9 @@ func New(ctx context.Context, cfg *config.Config, gateway *agent.Gateway) (*Clie
 	wac := whatsmeow.NewClient(deviceStore, log)
 
 	client := &Client{
-		wac:     wac,
-		gateway: gateway,
-		log:     log,
+		wac:       wac,
+		adkClient: adkClient,
+		log:       log,
 	}
 
 	wac.AddEventHandler(client.handleEvent)
@@ -139,7 +139,7 @@ func (c *Client) handleMessage(msg *events.Message) {
 	c.log.Infof("Received message from %s: %s", userID, text)
 
 	ctx := context.Background()
-	response, err := c.gateway.Chat(ctx, userID, text)
+	response, err := c.adkClient.Chat(ctx, userID, text)
 	if err != nil {
 		c.log.Errorf("Failed to get agent response: %v", err)
 		response = "Sorry, I encountered an error processing your message. Please try again."

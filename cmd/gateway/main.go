@@ -19,20 +19,19 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	if cfg.Agent.APIKey == "" {
-		fmt.Println("Error: GOOGLE_API_KEY environment variable is required")
-		fmt.Println("Set it with: export GOOGLE_API_KEY=your-api-key")
+	if cfg.ADK.Endpoint == "" {
+		fmt.Println("Error: ADK endpoint is required")
+		fmt.Println("Set it in config.yaml or via ADK_ENDPOINT environment variable")
 		os.Exit(1)
 	}
 
 	fmt.Println("🚀 Starting WhatsApp-ADK Gateway...")
+	fmt.Printf("📡 Connecting to ADK service: %s\n", cfg.ADK.Endpoint)
+	fmt.Printf("🤖 Agent: %s\n", cfg.ADK.AppName)
 
-	gateway, err := agent.New(ctx, &cfg.Agent)
-	if err != nil {
-		log.Fatalf("Failed to create agent gateway: %v", err)
-	}
+	adkClient := agent.NewClient(&cfg.ADK)
 
-	client, err := whatsapp.New(ctx, cfg, gateway)
+	client, err := whatsapp.New(ctx, cfg, adkClient)
 	if err != nil {
 		log.Fatalf("Failed to create WhatsApp client: %v", err)
 	}

@@ -1,5 +1,7 @@
 # AGENTS.md
 
+**IMPORTANT**: after changes in the code is made update the `README.md` file.
+
 ## Build/Test Commands
 - Build: `go build ./...`
 - Test all: `go test ./...`
