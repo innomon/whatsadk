@@ -22,3 +22,11 @@
 - Use table-driven tests with `t.Run()` for subtests
 - Return early to reduce nesting; avoid else after return
 - Use context.Context as first parameter for cancellation/timeouts
+
+## Config file
+All configuration will be through a `config.yaml` file, 1st check if it is passed via arg, if not present
+check the env var CONFIG_FILE, if not present search for the config file in curerent dir next in `config` sub dir, if not in the same dir as the executable is running from, or in the `config` sub dir of the executable path. 
+
+## Code Reference
+- Use [whatsapp go client](https://github.com/tulir/whatsmeow) to connect to whatsapp
+- Use [ADK go SDK](https://github.com/google/adk-go) to connect with agents
