@@ -1,6 +1,10 @@
 whatsapp:
   store_path: "whatsapp.db"
   log_level: "INFO"
+  whitelisted_users: []
+  # whitelisted_users:
+  #   - "1234567890"
+  #   - "0987654321"
 
 adk:
   endpoint: "http://localhost:8000"

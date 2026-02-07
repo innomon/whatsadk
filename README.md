@@ -62,6 +62,8 @@ Example `config/config.yaml`:
 whatsapp:
   store_path: "whatsapp.db"    # SQLite database for WhatsApp session
   log_level: "INFO"            # DEBUG, INFO, WARN, ERROR
+  whitelisted_users:           # Phone numbers allowed regardless of country
+    - "1234567890"
 
 adk:
   endpoint: "http://localhost:8000"  # ADK service URL
@@ -180,6 +182,7 @@ adk:
 
 - Only private (non-group) messages are processed
 - Messages from self are ignored
+- User access control: whitelisted users are always allowed; non-whitelisted users must have an Indian phone number (+91), otherwise they receive a rejection message
 - Each WhatsApp user gets their own session on the ADK service
 - Session history is managed by the ADK service
 

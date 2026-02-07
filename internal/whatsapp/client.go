@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/mdp/qrterminal/v3"
@@ -21,9 +22,12 @@ import (
 	"github.com/innomon/whatsadk/internal/config"
 )
 
+const indiaCountryCode = "91"
+
 type Client struct {
 	wac       *whatsmeow.Client
 	adkClient *agent.Client
+	cfg       *config.Config
 	log       waLog.Logger
 }
 
@@ -45,6 +49,7 @@ func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client) (*Cli
 	client := &Client{
 		wac:       wac,
 		adkClient: adkClient,
+		cfg:       cfg,
 		log:       log,
 	}
 
@@ -138,6 +143,18 @@ func (c *Client) handleMessage(msg *events.Message) {
 	userID := msg.Info.Sender.User
 	c.log.Infof("Received message from %s: %s", userID, text)
 
+	if !c.isUserAllowed(userID) {
+		c.log.Infof("Blocked message from non-allowed user %s", userID)
+		ctx := context.Background()
+		_, err := c.wac.SendMessage(ctx, msg.Info.Chat, &waE2E.Message{
+			Conversation: proto.String("Sorry, we only entertain friends from India."),
+		})
+		if err != nil {
+			c.log.Errorf("Failed to send rejection message: %v", err)
+		}
+		return
+	}
+
 	ctx := context.Background()
 	response, err := c.adkClient.Chat(ctx, userID, text)
 	if err != nil {
@@ -157,6 +174,13 @@ func (c *Client) handleMessage(msg *events.Message) {
 	} else {
 		c.log.Infof("Sent response to %s: %s", userID, truncate(response, 50))
 	}
+}
+
+func (c *Client) isUserAllowed(userID string) bool {
+	if c.cfg.IsUserWhitelisted(userID) {
+		return true
+	}
+	return strings.HasPrefix(userID, indiaCountryCode)
 }
 
 func extractText(msg *events.Message) string {

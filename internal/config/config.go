@@ -14,8 +14,9 @@ type Config struct {
 }
 
 type WhatsAppConfig struct {
-	StorePath string `yaml:"store_path"`
-	LogLevel  string `yaml:"log_level"`
+	StorePath        string   `yaml:"store_path"`
+	LogLevel         string   `yaml:"log_level"`
+	WhitelistedUsers []string `yaml:"whitelisted_users"`
 }
 
 type ADKConfig struct {
@@ -100,6 +101,15 @@ func (c *Config) applyDefaults() {
 	if c.ADK.AppName == "" {
 		c.ADK.AppName = "my_agent"
 	}
+}
+
+func (c *Config) IsUserWhitelisted(userID string) bool {
+	for _, u := range c.WhatsApp.WhitelistedUsers {
+		if u == userID {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Config) applyEnvOverrides() {
