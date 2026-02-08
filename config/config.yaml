@@ -11,3 +11,10 @@ adk:
   app_name: "my_agent"
   streaming: false
   # api_key: set via ADK_API_KEY environment variable for authenticated endpoints
+
+auth:
+  jwt:
+    # private_key_path: "secrets/jwt_private.pem"
+    # issuer: "whatsadk-gateway"
+    # audience: "adk-agent"
+    # ttl: "2m"

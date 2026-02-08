@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/innomon/whatsadk/internal/auth"
 	"github.com/innomon/whatsadk/internal/config"
 )
 
@@ -20,6 +21,7 @@ type Client struct {
 	apiKey     string
 	streaming  bool
 	httpClient *http.Client
+	jwtGen     *auth.JWTGenerator
 }
 
 type RunRequest struct {
@@ -54,12 +56,13 @@ type Content struct {
 	Parts []Part `json:"parts,omitempty"`
 }
 
-func NewClient(cfg *config.ADKConfig) *Client {
+func NewClient(cfg *config.ADKConfig, jwtGen *auth.JWTGenerator) *Client {
 	return &Client{
 		endpoint:  strings.TrimSuffix(cfg.Endpoint, "/"),
 		appName:   cfg.AppName,
 		apiKey:    cfg.APIKey,
 		streaming: cfg.Streaming,
+		jwtGen:    jwtGen,
 		httpClient: &http.Client{
 			Timeout: 120 * time.Second,
 		},
@@ -76,7 +79,9 @@ func (c *Client) EnsureSession(ctx context.Context, userID string) error {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	c.addAuthHeader(req)
+	if err := c.addAuthHeader(req, userID); err != nil {
+		return fmt.Errorf("failed to set auth header: %w", err)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -131,7 +136,9 @@ func (c *Client) chatRun(ctx context.Context, userID, message string) (string, e
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	c.addAuthHeader(req)
+	if err := c.addAuthHeader(req, userID); err != nil {
+		return "", fmt.Errorf("failed to set auth header: %w", err)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -179,7 +186,9 @@ func (c *Client) chatSSE(ctx context.Context, userID, message string) (string, e
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
-	c.addAuthHeader(req)
+	if err := c.addAuthHeader(req, userID); err != nil {
+		return "", fmt.Errorf("failed to set auth header: %w", err)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -220,10 +229,20 @@ func (c *Client) chatSSE(ctx context.Context, userID, message string) (string, e
 	return extractFinalResponse(events), nil
 }
 
-func (c *Client) addAuthHeader(req *http.Request) {
+func (c *Client) addAuthHeader(req *http.Request, userID string) error {
+	if c.jwtGen != nil {
+		token, err := c.jwtGen.Token(userID)
+		if err != nil {
+			return fmt.Errorf("failed to generate JWT: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		return nil
+	}
+
 	if c.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
+	return nil
 }
 
 func extractFinalResponse(events []Event) string {

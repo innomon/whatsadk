@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/innomon/whatsadk/internal/agent"
+	"github.com/innomon/whatsadk/internal/auth"
 	"github.com/innomon/whatsadk/internal/config"
 	"github.com/innomon/whatsadk/internal/whatsapp"
 )
@@ -25,11 +27,34 @@ func main() {
 		os.Exit(1)
 	}
 
+	var jwtGen *auth.JWTGenerator
+	if cfg.Auth.JWT.PrivateKeyPath != "" {
+		ttl := 2 * time.Minute
+		if cfg.Auth.JWT.TTL != "" {
+			parsed, err := time.ParseDuration(cfg.Auth.JWT.TTL)
+			if err != nil {
+				log.Fatalf("Invalid JWT TTL %q: %v", cfg.Auth.JWT.TTL, err)
+			}
+			ttl = parsed
+		}
+
+		jwtGen, err = auth.NewJWTGenerator(
+			cfg.Auth.JWT.PrivateKeyPath,
+			cfg.Auth.JWT.Issuer,
+			cfg.Auth.JWT.Audience,
+			ttl,
+		)
+		if err != nil {
+			log.Fatalf("Failed to initialize JWT auth: %v", err)
+		}
+		fmt.Println("🔐 JWT authentication enabled (RS256)")
+	}
+
 	fmt.Println("🚀 Starting WhatsApp-ADK Gateway...")
 	fmt.Printf("📡 Connecting to ADK service: %s\n", cfg.ADK.Endpoint)
 	fmt.Printf("🤖 Agent: %s\n", cfg.ADK.AppName)
 
-	adkClient := agent.NewClient(&cfg.ADK)
+	adkClient := agent.NewClient(&cfg.ADK, jwtGen)
 
 	client, err := whatsapp.New(ctx, cfg, adkClient)
 	if err != nil {

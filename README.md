@@ -9,6 +9,7 @@ A Go utility that connects WhatsApp via QR code and proxies messages to a remote
 - Proxy incoming WhatsApp messages to remote ADK Agent
 - Support for both `/run` (single response) and `/run_sse` (streaming) endpoints
 - Per-user session management on the ADK service
+- JWT authentication with RS256 (asymmetric) signing — includes `user_id` and `channel` custom claims
 - Configurable via YAML file or environment variables
 
 ## Requirements
@@ -23,6 +24,10 @@ A Go utility that connects WhatsApp via QR code and proxies messages to a remote
 whatsadk/
 ├── cmd/gateway/main.go          # Application entry point
 ├── internal/
+│   ├── auth/
+│   │   ├── claims.go            # JWT custom claims (user_id, channel)
+│   │   ├── jwt.go               # RS256 JWT token generator
+│   │   └── jwt_test.go          # JWT tests
 │   ├── config/config.go         # YAML config loader with env overrides
 │   ├── agent/client.go          # ADK REST/SSE client
 │   └── whatsapp/client.go       # WhatsApp client with QR authentication
@@ -46,6 +51,7 @@ go build -o whatsadk ./cmd/gateway
 | `ADK_ENDPOINT` | No | ADK service URL (default: `http://localhost:8000`) |
 | `ADK_APP_NAME` | No | Agent application name |
 | `ADK_API_KEY` | No | API key for authenticated endpoints |
+| `AUTH_JWT_PRIVATE_KEY_PATH` | No | Path to RSA private key PEM file for JWT auth |
 | `CONFIG_FILE` | No | Path to config file |
 
 ### Config File
@@ -70,6 +76,13 @@ adk:
   app_name: "my_agent"               # Agent app name registered in ADK
   streaming: false                    # Use SSE streaming (true) or single response (false)
   # api_key: set via ADK_API_KEY environment variable
+
+auth:
+  jwt:
+    # private_key_path: "secrets/jwt_private.pem"  # RSA private key (PEM) for RS256 signing
+    # issuer: "whatsadk-gateway"
+    # audience: "adk-agent"
+    # ttl: "2m"                                     # Token lifetime (default: 2m)
 ```
 
 ## Usage
@@ -147,6 +160,37 @@ The session is persisted in `whatsapp.db`. Future runs will reconnect automatica
 | `/apps/{app}/users/{user}/sessions/{session}` | POST | Create or reuse session |
 | `/run` | POST | Send message, get single response |
 | `/run_sse` | POST | Send message, stream response via SSE |
+
+## JWT Authentication
+
+The gateway supports RS256 (asymmetric) JWT authentication for requests to the ADK service. When enabled, each request includes a short-lived Bearer token with custom claims:
+
+- `user_id` — the WhatsApp sender's phone number
+- `channel` — always `"whatsapp"`
+
+### Setup
+
+1. Generate an RSA key pair:
+   ```bash
+   openssl genrsa -out secrets/jwt_private.pem 2048
+   openssl rsa -in secrets/jwt_private.pem -pubout -o secrets/jwt_public.pem
+   ```
+
+2. Configure the private key path in `config.yaml`:
+   ```yaml
+   auth:
+     jwt:
+       private_key_path: "secrets/jwt_private.pem"
+       issuer: "whatsadk-gateway"
+       audience: "adk-agent"
+       ttl: "2m"
+   ```
+
+3. Share `jwt_public.pem` with the ADK service for token verification.
+
+When `private_key_path` is not set, JWT auth is disabled and the gateway falls back to static API key authentication (if configured).
+
+For the ADK Go server-side verification implementation, see [docs/adk-jwt-auth-server.md](docs/adk-jwt-auth-server.md).
 
 ## Connecting to Different ADK Services
 

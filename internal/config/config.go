@@ -11,6 +11,18 @@ import (
 type Config struct {
 	WhatsApp WhatsAppConfig `yaml:"whatsapp"`
 	ADK      ADKConfig      `yaml:"adk"`
+	Auth     AuthConfig     `yaml:"auth"`
+}
+
+type AuthConfig struct {
+	JWT JWTConfig `yaml:"jwt"`
+}
+
+type JWTConfig struct {
+	PrivateKeyPath string `yaml:"private_key_path"`
+	Issuer         string `yaml:"issuer,omitempty"`
+	Audience       string `yaml:"audience,omitempty"`
+	TTL            string `yaml:"ttl,omitempty"`
 }
 
 type WhatsAppConfig struct {
@@ -121,5 +133,8 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if apiKey := os.Getenv("ADK_API_KEY"); apiKey != "" {
 		c.ADK.APIKey = apiKey
+	}
+	if keyPath := os.Getenv("AUTH_JWT_PRIVATE_KEY_PATH"); keyPath != "" {
+		c.Auth.JWT.PrivateKeyPath = keyPath
 	}
 }
