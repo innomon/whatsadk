@@ -57,6 +57,22 @@ func (g *JWTGenerator) Token(userID string) (string, error) {
 	return token.SignedString(g.key)
 }
 
+func (g *JWTGenerator) TokenWithAudience(userID, audience string) (string, error) {
+	now := time.Now()
+	claims := Claims{
+		UserID:  userID,
+		Channel: "whatsapp",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    g.issuer,
+			Audience:  jwt.ClaimStrings{audience},
+			IssuedAt:  jwt.NewNumericDate(now),
+			ExpiresAt: jwt.NewNumericDate(now.Add(g.ttl)),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	return token.SignedString(g.key)
+}
+
 func parseRSAPrivateKey(data []byte) (*rsa.PrivateKey, error) {
 	block, _ := pem.Decode(data)
 	if block == nil {

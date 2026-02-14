@@ -4,12 +4,15 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
+	"net/http"
 	"os"
 	"time"
 
 	"github.com/innomon/whatsadk/internal/agent"
 	"github.com/innomon/whatsadk/internal/auth"
 	"github.com/innomon/whatsadk/internal/config"
+	"github.com/innomon/whatsadk/internal/verification"
 	"github.com/innomon/whatsadk/internal/whatsapp"
 )
 
@@ -50,13 +53,39 @@ func main() {
 		fmt.Println("🔐 JWT authentication enabled (RS256)")
 	}
 
+	var verifyHandler *verification.Handler
+	if cfg.Verification.Enabled {
+		keyRegistry, err := auth.NewKeyRegistry(cfg.Verification.Apps)
+		if err != nil {
+			log.Fatalf("Failed to load verification app keys: %v", err)
+		}
+		if jwtGen == nil {
+			log.Fatalf("Verification requires JWT auth to be enabled (private_key_path must be set)")
+		}
+
+		timeout, _ := time.ParseDuration(cfg.Verification.CallbackTimeout)
+		if timeout == 0 {
+			timeout = 10 * time.Second
+		}
+
+		logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+		verifyHandler = verification.NewHandler(
+			keyRegistry,
+			jwtGen,
+			cfg.Verification,
+			&http.Client{Timeout: timeout},
+			logger,
+		)
+		fmt.Printf("🔑 Verification enabled (%d app(s) registered)\n", len(cfg.Verification.Apps))
+	}
+
 	fmt.Println("🚀 Starting WhatsApp-ADK Gateway...")
 	fmt.Printf("📡 Connecting to ADK service: %s\n", cfg.ADK.Endpoint)
 	fmt.Printf("🤖 Agent: %s\n", cfg.ADK.AppName)
 
 	adkClient := agent.NewClient(&cfg.ADK, jwtGen)
 
-	client, err := whatsapp.New(ctx, cfg, adkClient)
+	client, err := whatsapp.New(ctx, cfg, adkClient, verifyHandler)
 	if err != nil {
 		log.Fatalf("Failed to create WhatsApp client: %v", err)
 	}

@@ -10,6 +10,7 @@ A Go utility that connects WhatsApp via QR code and proxies messages to a remote
 - Support for both `/run` (single response) and `/run_sse` (streaming) endpoints
 - Per-user session management on the ADK service
 - JWT authentication with RS256 (asymmetric) signing — includes `user_id` and `channel` custom claims
+- **Reverse OTP verification** — apps send a JWT token to the user's WhatsApp; the gateway verifies the sender's phone matches the token's claim and posts a signed callback to confirm identity
 - Configurable via YAML file or environment variables
 
 ## Requirements
@@ -26,10 +27,16 @@ whatsadk/
 ├── internal/
 │   ├── auth/
 │   │   ├── claims.go            # JWT custom claims (user_id, channel)
-│   │   ├── jwt.go               # RS256 JWT token generator
-│   │   └── jwt_test.go          # JWT tests
+│   │   ├── jwt.go               # RS256 JWT token generator (includes per-audience tokens)
+│   │   ├── jwt_test.go          # JWT tests
+│   │   ├── key_registry.go      # App public key registry for verification
+│   │   ├── verify_token.go      # Verification token detection & validation
+│   │   └── verify_token_test.go # Verification token tests
 │   ├── config/config.go         # YAML config loader with env overrides
 │   ├── agent/client.go          # ADK REST/SSE client
+│   ├── verification/
+│   │   ├── handler.go           # Reverse OTP verification handler
+│   │   └── handler_test.go      # Verification handler tests
 │   └── whatsapp/client.go       # WhatsApp client with QR authentication
 ├── config/config.yaml           # Default configuration
 ├── go.mod
@@ -52,6 +59,8 @@ go build -o whatsadk ./cmd/gateway
 | `ADK_APP_NAME` | No | Agent application name |
 | `ADK_API_KEY` | No | API key for authenticated endpoints |
 | `AUTH_JWT_PRIVATE_KEY_PATH` | No | Path to RSA private key PEM file for JWT auth |
+| `VERIFICATION_ENABLED` | No | Enable reverse OTP verification (`true`) |
+| `VERIFICATION_CALLBACK_TIMEOUT` | No | Timeout for verification callback HTTP requests (default: `10s`) |
 | `CONFIG_FILE` | No | Path to config file |
 
 ### Config File
@@ -191,6 +200,37 @@ The gateway supports RS256 (asymmetric) JWT authentication for requests to the A
 When `private_key_path` is not set, JWT auth is disabled and the gateway falls back to static API key authentication (if configured).
 
 For the ADK Go server-side verification implementation, see [docs/adk-jwt-auth-server.md](docs/adk-jwt-auth-server.md).
+
+## Reverse OTP Verification
+
+The gateway supports a Reverse OTP flow where third-party apps can verify a user's phone number ownership via WhatsApp:
+
+1. The app generates a signed JWT containing the user's phone number, app name, callback URL, and challenge ID
+2. The user sends this token as a WhatsApp message to the gateway
+3. The gateway verifies:
+   - The token signature against the app's registered public key
+   - The token hasn't expired
+   - The sender's WhatsApp phone number matches the `mobile` claim in the token
+4. On success, the gateway POSTs a signed callback JWT (with `audience` set to the app name) to the app's callback URL
+5. The user receives a confirmation message in WhatsApp
+
+### Configuration
+
+```yaml
+verification:
+  enabled: true
+  callback_timeout: "10s"
+  apps:
+    my-app:
+      public_key_path: "secrets/my_app_public.pem"
+  messages:
+    success: "✅ Verification successful! You can now return to the app."
+    expired: "❌ Verification failed. The link may have expired."
+    phone_mismatch: "❌ Verification failed. Please send from the registered number."
+    error: "⚠️ Something went wrong. Please try again."
+```
+
+Each app must register its RSA public key so the gateway can verify incoming verification tokens.
 
 ## Connecting to Different ADK Services
 

@@ -18,3 +18,15 @@ auth:
     # issuer: "whatsadk-gateway"
     # audience: "adk-agent"
     # ttl: "2m"
+
+verification:
+  enabled: false
+  callback_timeout: "10s"
+  # apps:
+  #   orez-laundry-app:
+  #     public_key_path: "secrets/apps/orez-laundry-app/public.pem"
+  # messages:
+  #   success: "✅ Verification successful! You can now return to the app."
+  #   expired: "❌ Verification failed. The link may have expired. Please request a new one from the app."
+  #   phone_mismatch: "❌ Verification failed. Please make sure you're sending from the same number you registered with."
+  #   error: "⚠️ Something went wrong. Please try again in a moment."

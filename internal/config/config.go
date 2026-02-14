@@ -9,9 +9,28 @@ import (
 )
 
 type Config struct {
-	WhatsApp WhatsAppConfig `yaml:"whatsapp"`
-	ADK      ADKConfig      `yaml:"adk"`
-	Auth     AuthConfig     `yaml:"auth"`
+	WhatsApp     WhatsAppConfig     `yaml:"whatsapp"`
+	ADK          ADKConfig          `yaml:"adk"`
+	Auth         AuthConfig         `yaml:"auth"`
+	Verification VerificationConfig `yaml:"verification"`
+}
+
+type VerificationConfig struct {
+	Enabled         bool                      `yaml:"enabled"`
+	CallbackTimeout string                    `yaml:"callback_timeout"`
+	Apps            map[string]AppVerifyConfig `yaml:"apps"`
+	Messages        VerificationMessages       `yaml:"messages"`
+}
+
+type AppVerifyConfig struct {
+	PublicKeyPath string `yaml:"public_key_path"`
+}
+
+type VerificationMessages struct {
+	Success       string `yaml:"success"`
+	Expired       string `yaml:"expired"`
+	PhoneMismatch string `yaml:"phone_mismatch"`
+	Error         string `yaml:"error"`
 }
 
 type AuthConfig struct {
@@ -113,6 +132,21 @@ func (c *Config) applyDefaults() {
 	if c.ADK.AppName == "" {
 		c.ADK.AppName = "my_agent"
 	}
+	if c.Verification.Messages.Success == "" {
+		c.Verification.Messages.Success = "✅ Verification successful! You can now return to the app."
+	}
+	if c.Verification.Messages.Expired == "" {
+		c.Verification.Messages.Expired = "❌ Verification failed. The link may have expired. Please request a new one from the app."
+	}
+	if c.Verification.Messages.PhoneMismatch == "" {
+		c.Verification.Messages.PhoneMismatch = "❌ Verification failed. Please make sure you're sending from the same number you registered with."
+	}
+	if c.Verification.Messages.Error == "" {
+		c.Verification.Messages.Error = "⚠️ Something went wrong. Please try again in a moment."
+	}
+	if c.Verification.CallbackTimeout == "" {
+		c.Verification.CallbackTimeout = "10s"
+	}
 }
 
 func (c *Config) IsUserWhitelisted(userID string) bool {
@@ -136,5 +170,11 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if keyPath := os.Getenv("AUTH_JWT_PRIVATE_KEY_PATH"); keyPath != "" {
 		c.Auth.JWT.PrivateKeyPath = keyPath
+	}
+	if v := os.Getenv("VERIFICATION_ENABLED"); v == "true" {
+		c.Verification.Enabled = true
+	}
+	if v := os.Getenv("VERIFICATION_CALLBACK_TIMEOUT"); v != "" {
+		c.Verification.CallbackTimeout = v
 	}
 }

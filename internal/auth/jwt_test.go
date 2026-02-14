@@ -114,3 +114,36 @@ func TestJWTGenerator_InvalidKeyData(t *testing.T) {
 		t.Fatal("expected error for invalid key data")
 	}
 }
+
+func TestTokenWithAudience(t *testing.T) {
+	keyPath, pubKey := generateTestKey(t)
+
+	gen, err := NewJWTGenerator(keyPath, "test-issuer", "default-audience", 5*time.Minute)
+	if err != nil {
+		t.Fatalf("failed to create generator: %v", err)
+	}
+
+	tokenStr, err := gen.TokenWithAudience("user123", "custom-app")
+	if err != nil {
+		t.Fatalf("failed to generate token: %v", err)
+	}
+
+	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
+		return pubKey, nil
+	})
+	if err != nil {
+		t.Fatalf("failed to parse token: %v", err)
+	}
+
+	claims, ok := token.Claims.(*Claims)
+	if !ok || !token.Valid {
+		t.Fatal("token claims invalid")
+	}
+
+	if claims.UserID != "user123" {
+		t.Errorf("expected user_id=user123, got %s", claims.UserID)
+	}
+	if len(claims.Audience) != 1 || claims.Audience[0] != "custom-app" {
+		t.Errorf("expected audience=[custom-app], got %v", claims.Audience)
+	}
+}

@@ -19,19 +19,22 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/innomon/whatsadk/internal/agent"
+	"github.com/innomon/whatsadk/internal/auth"
 	"github.com/innomon/whatsadk/internal/config"
+	"github.com/innomon/whatsadk/internal/verification"
 )
 
 const indiaCountryCode = "91"
 
 type Client struct {
-	wac       *whatsmeow.Client
-	adkClient *agent.Client
-	cfg       *config.Config
-	log       waLog.Logger
+	wac           *whatsmeow.Client
+	adkClient     *agent.Client
+	verifyHandler *verification.Handler
+	cfg           *config.Config
+	log           waLog.Logger
 }
 
-func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client) (*Client, error) {
+func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client, verifyHandler *verification.Handler) (*Client, error) {
 	log := waLog.Stdout("WhatsApp", cfg.WhatsApp.LogLevel, true)
 
 	container, err := sqlstore.New(ctx, "sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on", cfg.WhatsApp.StorePath), log)
@@ -47,10 +50,11 @@ func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client) (*Cli
 	wac := whatsmeow.NewClient(deviceStore, log)
 
 	client := &Client{
-		wac:       wac,
-		adkClient: adkClient,
-		cfg:       cfg,
-		log:       log,
+		wac:           wac,
+		adkClient:     adkClient,
+		verifyHandler: verifyHandler,
+		cfg:           cfg,
+		log:           log,
 	}
 
 	wac.AddEventHandler(client.handleEvent)
@@ -141,7 +145,21 @@ func (c *Client) handleMessage(msg *events.Message) {
 	}
 
 	userID := msg.Info.Sender.User
-	c.log.Infof("Received message from %s: %s", userID, text)
+	c.log.Infof("Received message from %s: %s", userID, truncate(text, 80))
+
+	if c.verifyHandler != nil && auth.IsVerificationToken(text) != nil {
+		ctx := context.Background()
+		response := c.verifyHandler.Handle(ctx, userID, text)
+		if response != "" {
+			_, err := c.wac.SendMessage(ctx, msg.Info.Chat, &waE2E.Message{
+				Conversation: proto.String(response),
+			})
+			if err != nil {
+				c.log.Errorf("Failed to send verification response: %v", err)
+			}
+			return
+		}
+	}
 
 	if !c.isUserAllowed(userID) {
 		c.log.Infof("Blocked message from non-allowed user %s", userID)
