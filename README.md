@@ -19,30 +19,6 @@ A Go utility that connects WhatsApp via QR code and proxies messages to a remote
 - CGO enabled (for SQLite)
 - Running ADK Agent service (local or remote)
 
-## Project Structure
-
-```
-whatsadk/
-├── cmd/gateway/main.go          # Application entry point
-├── internal/
-│   ├── auth/
-│   │   ├── claims.go            # JWT custom claims (user_id, channel)
-│   │   ├── jwt.go               # RS256 JWT token generator (includes per-audience tokens)
-│   │   ├── jwt_test.go          # JWT tests
-│   │   ├── key_registry.go      # App public key registry for verification
-│   │   ├── verify_token.go      # Verification token detection & validation
-│   │   └── verify_token_test.go # Verification token tests
-│   ├── config/config.go         # YAML config loader with env overrides
-│   ├── agent/client.go          # ADK REST/SSE client
-│   ├── verification/
-│   │   ├── handler.go           # Reverse OTP verification handler
-│   │   └── handler_test.go      # Verification handler tests
-│   └── whatsapp/client.go       # WhatsApp client with QR authentication
-├── config/config.yaml           # Default configuration
-├── go.mod
-└── README.md
-```
-
 ## Installation
 
 ```bash
@@ -256,6 +232,10 @@ adk:
   app_name: "deployed_agent"
   # api_key: use service account or OAuth token
 ```
+
+## Architecture
+
+For a detailed architecture overview, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Dependencies
 
