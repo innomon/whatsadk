@@ -12,27 +12,40 @@ import (
 	"github.com/innomon/whatsadk/internal/config"
 )
 
+type BlacklistChecker interface {
+	IsBlacklisted(ctx context.Context, phone string) (bool, error)
+}
+
 type Handler struct {
-	keys       *auth.KeyRegistry
-	jwtGen     *auth.JWTGenerator
-	httpClient *http.Client
-	messages   config.VerificationMessages
-	logger     *slog.Logger
+	keys          *auth.KeyRegistry
+	jwtGen        *auth.JWTGenerator
+	blacklist     BlacklistChecker
+	devOpsNumbers map[string]struct{}
+	httpClient    *http.Client
+	messages      config.VerificationMessages
+	logger        *slog.Logger
 }
 
 func NewHandler(
 	keys *auth.KeyRegistry,
 	jwtGen *auth.JWTGenerator,
+	blacklist BlacklistChecker,
 	cfg config.VerificationConfig,
 	httpClient *http.Client,
 	logger *slog.Logger,
 ) *Handler {
+	devOps := make(map[string]struct{}, len(cfg.DevOpsNumbers))
+	for _, n := range cfg.DevOpsNumbers {
+		devOps[normalizePhone(n)] = struct{}{}
+	}
 	return &Handler{
-		keys:       keys,
-		jwtGen:     jwtGen,
-		httpClient: httpClient,
-		messages:   cfg.Messages,
-		logger:     logger,
+		keys:          keys,
+		jwtGen:        jwtGen,
+		blacklist:     blacklist,
+		devOpsNumbers: devOps,
+		httpClient:    httpClient,
+		messages:      cfg.Messages,
+		logger:        logger,
 	}
 }
 
@@ -40,6 +53,20 @@ func (h *Handler) Handle(ctx context.Context, senderPhone, messageBody string) s
 	claims := auth.IsVerificationToken(messageBody)
 	if claims == nil {
 		return ""
+	}
+
+	senderNormalized := normalizePhone(senderPhone)
+
+	if h.blacklist != nil {
+		blocked, err := h.blacklist.IsBlacklisted(ctx, senderNormalized)
+		if err != nil {
+			h.logger.Error("blacklist check failed", "error", err, "phone", senderNormalized)
+			return h.messages.Error
+		}
+		if blocked {
+			h.logger.Warn("blacklisted number attempted verification", "phone", senderNormalized)
+			return h.messages.Blacklisted
+		}
 	}
 
 	appKey, err := h.keys.GetAppPublicKey(claims.AppName)
@@ -54,14 +81,19 @@ func (h *Handler) Handle(ctx context.Context, senderPhone, messageBody string) s
 		return h.messages.Expired
 	}
 
-	senderNormalized := normalizePhone(senderPhone)
 	mobileNormalized := normalizePhone(verified.Mobile)
 	if senderNormalized != mobileNormalized {
-		h.logger.Warn("phone mismatch",
+		if _, isDevOps := h.devOpsNumbers[senderNormalized]; !isDevOps {
+			h.logger.Warn("phone mismatch",
+				"sender", senderNormalized,
+				"claim_mobile", mobileNormalized,
+			)
+			return h.messages.PhoneMismatch
+		}
+		h.logger.Info("devops override: phone mismatch allowed",
 			"sender", senderNormalized,
 			"claim_mobile", mobileNormalized,
 		)
-		return h.messages.PhoneMismatch
 	}
 
 	callbackJWT, err := h.jwtGen.TokenWithAudience(senderNormalized, verified.AppName)

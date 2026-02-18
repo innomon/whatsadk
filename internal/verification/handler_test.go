@@ -21,11 +21,20 @@ import (
 	"github.com/innomon/whatsadk/internal/config"
 )
 
+type mockBlacklist struct {
+	blocked map[string]bool
+}
+
+func (m *mockBlacklist) IsBlacklisted(_ context.Context, phone string) (bool, error) {
+	return m.blocked[phone], nil
+}
+
 type testSetup struct {
 	appKey     *rsa.PrivateKey
 	gwKeyPath  string
 	gwPubKey   *rsa.PublicKey
 	handler    *Handler
+	blacklist  *mockBlacklist
 	server     *httptest.Server
 	serverURL  string
 	callbackCh chan *http.Request
@@ -96,19 +105,22 @@ func setupTest(t *testing.T) *testSetup {
 			Success:       "✅ Verification successful! You can now return to the app.",
 			Expired:       "❌ Verification failed. The link may have expired. Please request a new one from the app.",
 			PhoneMismatch: "❌ Verification failed. Please make sure you're sending from the same number you registered with.",
+			Blacklisted:   "🚫 This number has been blocked from verification.",
 			Error:         "⚠️ Something went wrong. Please try again in a moment.",
 		},
 	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
-	handler := NewHandler(keyRegistry, jwtGen, cfg, server.Client(), logger)
+	bl := &mockBlacklist{blocked: make(map[string]bool)}
+	handler := NewHandler(keyRegistry, jwtGen, bl, cfg, server.Client(), logger)
 
 	return &testSetup{
 		appKey:     appKey,
 		gwKeyPath:  gwKeyPath,
 		gwPubKey:   &gwKey.PublicKey,
 		handler:    handler,
+		blacklist:  bl,
 		server:     server,
 		serverURL:  server.URL,
 		callbackCh: callbackCh,
@@ -226,12 +238,78 @@ func TestHandler_CallbackFails(t *testing.T) {
 	}
 	keyRegistry, _ := auth.NewKeyRegistry(apps)
 	jwtGen, _ := auth.NewJWTGenerator(ts.gwKeyPath, "whatsadk-gateway", "", 2*time.Minute)
-	handler := NewHandler(keyRegistry, jwtGen, cfg, failServer.Client(), logger)
+	handler := NewHandler(keyRegistry, jwtGen, ts.blacklist, cfg, failServer.Client(), logger)
 
 	result := handler.Handle(context.Background(), "910987654321", tokenStr)
 
 	if !strings.Contains(result, "Something went wrong") {
 		t.Errorf("expected error message, got: %s", result)
+	}
+}
+
+func TestHandler_BlacklistedNumber(t *testing.T) {
+	ts := setupTest(t)
+
+	ts.blacklist.blocked["910987654321"] = true
+
+	tokenStr := signTestVerificationToken(t, ts.appKey,
+		"910987654321", "test-app",
+		ts.serverURL+"/callback?challenge_id=abc-123", "abc-123",
+		time.Now().Add(5*time.Minute),
+	)
+
+	result := ts.handler.Handle(context.Background(), "910987654321", tokenStr)
+
+	if !strings.Contains(result, "blocked") {
+		t.Errorf("expected blacklisted message, got: %s", result)
+	}
+
+	// Verify no callback was made
+	select {
+	case <-ts.callbackCh:
+		t.Fatal("expected no callback for blacklisted number")
+	default:
+	}
+}
+
+func TestHandler_PhoneMismatch_DevOps(t *testing.T) {
+	ts := setupTest(t)
+
+	// Re-create handler with devops number configured
+	cfg := config.VerificationConfig{
+		DevOpsNumbers: []string{"919999999999"},
+		Messages:      ts.handler.messages,
+	}
+	apps := map[string]config.AppVerifyConfig{
+		"test-app": {PublicKeyPath: writeAppPubKey(t, ts.appKey)},
+	}
+	keyRegistry, _ := auth.NewKeyRegistry(apps)
+	jwtGen, _ := auth.NewJWTGenerator(ts.gwKeyPath, "whatsadk-gateway", "", 2*time.Minute)
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	handler := NewHandler(keyRegistry, jwtGen, ts.blacklist, cfg, ts.server.Client(), logger)
+
+	// Token claims mobile=910987654321, but sender is the devops number
+	tokenStr := signTestVerificationToken(t, ts.appKey,
+		"910987654321", "test-app",
+		ts.serverURL+"/callback?challenge_id=abc-123", "abc-123",
+		time.Now().Add(5*time.Minute),
+	)
+
+	result := handler.Handle(context.Background(), "919999999999", tokenStr)
+
+	if !strings.Contains(result, "Verification successful") {
+		t.Errorf("expected success message for devops override, got: %s", result)
+	}
+
+	// Verify callback was received
+	select {
+	case req := <-ts.callbackCh:
+		authHeader := req.Header.Get("Authorization")
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			t.Errorf("expected Bearer auth header, got: %s", authHeader)
+		}
+	default:
+		t.Fatal("expected callback request for devops override but none received")
 	}
 }
 

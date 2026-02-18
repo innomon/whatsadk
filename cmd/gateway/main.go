@@ -12,6 +12,7 @@ import (
 	"github.com/innomon/whatsadk/internal/agent"
 	"github.com/innomon/whatsadk/internal/auth"
 	"github.com/innomon/whatsadk/internal/config"
+	"github.com/innomon/whatsadk/internal/store"
 	"github.com/innomon/whatsadk/internal/verification"
 	"github.com/innomon/whatsadk/internal/whatsapp"
 )
@@ -63,6 +64,12 @@ func main() {
 			log.Fatalf("Verification requires JWT auth to be enabled (private_key_path must be set)")
 		}
 
+		gwStore, err := store.Open(cfg.Verification.DatabaseURL)
+		if err != nil {
+			log.Fatalf("Failed to open gateway store: %v", err)
+		}
+		defer gwStore.Close()
+
 		timeout, _ := time.ParseDuration(cfg.Verification.CallbackTimeout)
 		if timeout == 0 {
 			timeout = 10 * time.Second
@@ -72,6 +79,7 @@ func main() {
 		verifyHandler = verification.NewHandler(
 			keyRegistry,
 			jwtGen,
+			gwStore,
 			cfg.Verification,
 			&http.Client{Timeout: timeout},
 			logger,

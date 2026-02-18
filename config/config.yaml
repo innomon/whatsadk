@@ -22,6 +22,9 @@ auth:
 verification:
   enabled: false
   callback_timeout: "10s"
+  database_url: "postgres://localhost:5432/whatsadk?sslmode=disable"  # PostgreSQL for blacklisted numbers
+  # devops_numbers:         # E.164 digits (no + prefix) allowed to bypass phone mismatch
+  #   - "910000000000"
   # apps:
   #   orez-laundry-app:
   #     public_key_path: "secrets/apps/orez-laundry-app/public.pem"
@@ -29,4 +32,5 @@ verification:
   #   success: "✅ Verification successful! You can now return to the app."
   #   expired: "❌ Verification failed. The link may have expired. Please request a new one from the app."
   #   phone_mismatch: "❌ Verification failed. Please make sure you're sending from the same number you registered with."
+  #   blacklisted: "🚫 This number has been blocked from verification."
   #   error: "⚠️ Something went wrong. Please try again in a moment."

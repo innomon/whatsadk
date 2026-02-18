@@ -37,6 +37,7 @@ go build -o whatsadk ./cmd/gateway
 | `AUTH_JWT_PRIVATE_KEY_PATH` | No | Path to RSA private key PEM file for JWT auth |
 | `VERIFICATION_ENABLED` | No | Enable reverse OTP verification (`true`) |
 | `VERIFICATION_CALLBACK_TIMEOUT` | No | Timeout for verification callback HTTP requests (default: `10s`) |
+| `VERIFICATION_DATABASE_URL` | No | PostgreSQL connection string for blacklist store |
 | `CONFIG_FILE` | No | Path to config file |
 
 ### Config File
@@ -179,21 +180,27 @@ For the ADK Go server-side verification implementation, see [docs/adk-jwt-auth-s
 
 ## Reverse OTP Verification
 
-The gateway supports a Reverse OTP flow where third-party apps can verify a user's phone number ownership via WhatsApp:
+The gateway supports a two-factor Reverse OTP flow where third-party apps can verify a user's phone number ownership via WhatsApp and deliver an OTP for login:
 
 1. The app generates a signed JWT containing the user's phone number, app name, and challenge ID
-2. The user sends this token as a WhatsApp message to the gateway
+2. The user sends this token as a WhatsApp message to the gateway (via a deep link)
 3. The gateway verifies:
+   - The sender's number is not blacklisted
    - The token signature against the app's registered public key
    - The token hasn't expired
-   - The sender's WhatsApp phone number matches the `mobile` claim (E.164 digits comparison)
-4. On success, the gateway constructs the callback URL from **static per-app config** (not from the JWT) and POSTs a signed callback JWT containing `user_id`, `challenge_id`, and `audience` set to the app name
-5. The user receives a confirmation message in WhatsApp
+   - The sender's WhatsApp phone number matches the `mobile` claim (E.164 digits comparison), or the sender is a DevOps number
+4. On success, the gateway constructs the callback URL from **static per-app config** (not from the JWT), POSTs a signed callback JWT, and receives an OTP in the response
+5. The gateway relays the OTP to the user via WhatsApp reply
+6. The user enters the OTP in the app's login screen to complete authentication
+
+**Two-factor assurance:** Factor 1 — WhatsApp message (proves phone ownership); Factor 2 — OTP entry in browser (proves session continuity).
 
 **Security design:**
 - **No `callback_url` in JWT** — callback destination is derived from static config to prevent SSRF
 - **`challenge_id` bound in callback JWT** — prevents confused deputy / cross-challenge replay attacks
 - **Redirects disallowed** on callback HTTP client
+- **Number blacklisting** via PostgreSQL at the gateway level
+- **DevOps override** — configured phone numbers bypass phone mismatch check for testing/operations
 
 ### Configuration
 
@@ -201,18 +208,35 @@ The gateway supports a Reverse OTP flow where third-party apps can verify a user
 verification:
   enabled: true
   callback_timeout: "10s"
+  database_url: "postgres://localhost:5432/whatsadk?sslmode=disable"  # PostgreSQL for blacklisted numbers
+  devops_numbers:           # E.164 digits (no + prefix) allowed to bypass phone mismatch
+    - "910000000000"
   apps:
     my-app:
       public_key_path: "secrets/my_app_public.pem"
       callback_base_url: "https://api.my-app.com/api/v1/auth/whatsapp"
   messages:
-    success: "✅ Verification successful! You can now return to the app."
+    otp_delivery: "🔐 Your verification code is: %s\n\nEnter this code in the app to complete login. This code expires in 5 minutes."
     expired: "❌ Verification failed. The link may have expired."
     phone_mismatch: "❌ Verification failed. Please send from the registered number."
+    blacklisted: "🚫 This number has been blocked."
     error: "⚠️ Something went wrong. Please try again."
 ```
 
-Each app must register its RSA public key and callback base URL so the gateway can verify incoming verification tokens and call back to the correct endpoint.
+Each app must register its RSA public key and callback base URL. The backend callback must return `{"otp":"..."}` in the 200 response body.
+
+**Blacklisted numbers** are stored in PostgreSQL. The `blacklisted_numbers` table is auto-created on first run. Numbers are in E.164 digits format (e.g. `910987654321`). Manage entries directly via `psql`:
+
+```bash
+# Add a blacklisted number
+psql "$VERIFICATION_DATABASE_URL" -c "INSERT INTO blacklisted_numbers (phone, reason) VALUES ('910987654321', 'spam') ON CONFLICT DO NOTHING;"
+
+# Remove a blacklisted number
+psql "$VERIFICATION_DATABASE_URL" -c "DELETE FROM blacklisted_numbers WHERE phone = '910987654321';"
+
+# List all blacklisted numbers
+psql "$VERIFICATION_DATABASE_URL" -c "SELECT * FROM blacklisted_numbers;"
+```
 
 ## Connecting to Different ADK Services
 

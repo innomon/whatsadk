@@ -18,6 +18,8 @@ type Config struct {
 type VerificationConfig struct {
 	Enabled         bool                      `yaml:"enabled"`
 	CallbackTimeout string                    `yaml:"callback_timeout"`
+	DatabaseURL     string                    `yaml:"database_url"`
+	DevOpsNumbers   []string                  `yaml:"devops_numbers"`
 	Apps            map[string]AppVerifyConfig `yaml:"apps"`
 	Messages        VerificationMessages       `yaml:"messages"`
 }
@@ -30,6 +32,7 @@ type VerificationMessages struct {
 	Success       string `yaml:"success"`
 	Expired       string `yaml:"expired"`
 	PhoneMismatch string `yaml:"phone_mismatch"`
+	Blacklisted   string `yaml:"blacklisted"`
 	Error         string `yaml:"error"`
 }
 
@@ -141,6 +144,12 @@ func (c *Config) applyDefaults() {
 	if c.Verification.Messages.PhoneMismatch == "" {
 		c.Verification.Messages.PhoneMismatch = "❌ Verification failed. Please make sure you're sending from the same number you registered with."
 	}
+	if c.Verification.Messages.Blacklisted == "" {
+		c.Verification.Messages.Blacklisted = "🚫 This number has been blocked from verification."
+	}
+	if c.Verification.DatabaseURL == "" {
+		c.Verification.DatabaseURL = "postgres://localhost:5432/whatsadk?sslmode=disable"
+	}
 	if c.Verification.Messages.Error == "" {
 		c.Verification.Messages.Error = "⚠️ Something went wrong. Please try again in a moment."
 	}
@@ -176,5 +185,8 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if v := os.Getenv("VERIFICATION_CALLBACK_TIMEOUT"); v != "" {
 		c.Verification.CallbackTimeout = v
+	}
+	if v := os.Getenv("VERIFICATION_DATABASE_URL"); v != "" {
+		c.Verification.DatabaseURL = v
 	}
 }

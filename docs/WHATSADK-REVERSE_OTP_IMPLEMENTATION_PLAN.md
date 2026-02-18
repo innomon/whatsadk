@@ -6,9 +6,22 @@
 
 ## 1. Overview
 
-The WhatsADK gateway currently bridges WhatsApp messages to Google ADK agents. This plan adds a **verification message handler** that intercepts specially formatted JWT messages from users, validates them, and calls back the originating application's backend to confirm phone number ownership.
+The WhatsADK gateway currently bridges WhatsApp messages to Google ADK agents. This plan adds a **verification message handler** that intercepts specially formatted JWT messages from users, validates them, calls back the originating application's backend to obtain an OTP, and relays that OTP to the user via WhatsApp reply.
 
-This is the gateway-side counterpart to the backend flow documented in [Backend auth spec](https://github.com/innomon/orez-laundry-app/blob/main/docs/otp-logic.md).
+This is the gateway-side counterpart to the backend flow documented in the [orez-hyper-local implementation plan](https://github.com/innomon/orez-hyper-local/blob/main/IMPLEMENTATION_PLAN.md).
+
+### How it works (summary)
+
+1. User opens the PWA → no valid JWT → "Login/Signup with WhatsApp" modal
+2. User enters WhatsApp number → backend checks user status
+3. If active or new user → backend generates a JWT (signed with app's RSA private key) containing phone, TTL, and app_name → presents a WhatsApp deep link with the JWT as message body
+4. User clicks the link → WhatsApp opens → user sends the JWT to the gateway's number
+5. Gateway verifies the JWT, checks sender phone match and blacklist → calls the backend callback with a gateway-signed JWT
+6. Backend responds with an OTP → gateway relays the OTP to the user via WhatsApp reply
+7. User enters the OTP in the PWA login screen → gains access
+8. If the number was not found in the database (new user), a profile capture screen is presented after OTP entry
+
+**This is a two-factor flow:** WhatsApp ownership (sending the message proves the user controls that WhatsApp number) + OTP entry (proves the user has access to both WhatsApp and the browser session).
 
 ---
 
@@ -91,44 +104,79 @@ The JWT is parsed without signature verification first (header-only or claims pe
 ```
 ┌──────────┐        ┌───────────────┐        ┌──────────────┐
 │ WhatsApp │        │  WhatsADK GW  │        │ App Backend  │
-│ (User)   │        │               │        │ (Kln API)    │
+│ (User)   │        │               │        │ (orez API)   │
 └────┬─────┘        └──────┬────────┘        └──────┬───────┘
-     │ Send JWT message     │                        │
-     ├─────────────────────►│                        │
-     │                      │ 1. Detect JWT          │
-     │                      │ 2. Parse claims        │
-     │                      │ 3. Load app public key │
-     │                      │ 4. Verify RS256 sig    │
-     │                      │ 5. Check exp           │
-     │                      │ 6. Match sender phone  │
-     │                      │    vs claim.mobile     │
-     │                      │ 7. Resolve callback URL│
-     │                      │    from app config     │
      │                      │                        │
-     │                      │ 8. Sign callback JWT   │
-     │                      │    (GW private key,    │
-     │                      │     incl challenge_id) │
+     │  1. User opens PWA,  │                        │
+     │     enters phone     │                        │
+     │     number           │                        │
+     │                      │                        │
+     │                      │                        │ 2. Backend checks
+     │                      │                        │    user status
+     │                      │                        │    (pending/suspended
+     │                      │                        │     → stop;
+     │                      │                        │     active/new → ok)
+     │                      │                        │
+     │                      │                        │ 3. Backend generates
+     │                      │                        │    JWT with phone,
+     │                      │                        │    TTL, app_name
+     │                      │                        │
+     │                      │                        │ 4. WhatsApp deep link
+     │  ◄────────────────────────────────────────────┤    presented to user
+     │                      │                        │
+     │ 5. User clicks link, │                        │
+     │    sends JWT message  │                        │
+     ├─────────────────────►│                        │
+     │                      │ 6. Detect JWT          │
+     │                      │ 7. Parse claims        │
+     │                      │ 8. Load app public key │
+     │                      │ 9. Verify RS256 sig    │
+     │                      │ 10. Check exp          │
+     │                      │ 11. Match sender phone │
+     │                      │     vs claim.mobile    │
+     │                      │ 12. Check blacklist    │
+     │                      │ 13. Resolve callback   │
+     │                      │     URL from app config│
+     │                      │                        │
+     │                      │ 14. Sign callback JWT  │
+     │                      │     (GW private key,   │
+     │                      │      incl challenge_id)│
      │                      │                        │
      │                      │ POST callback_base_url │
      │                      │  + /callback?          │
      │                      │  challenge_id=...      │
      │                      ├───────────────────────►│
-     │                      │                        │ Verify GW JWT
-     │                      │                        │ Mark challenge verified
+     │                      │                        │ 15. Verify GW JWT
+     │                      │                        │ 16. Generate OTP
+     │                      │                        │ 17. Store OTP with
+     │                      │                        │     challenge
      │                      │◄───────────────────────┤
-     │                      │ 200 OK                 │
+     │                      │ 200 OK + {"otp":"..."}│
      │                      │                        │
-     │ ✅ "Verified! You    │                        │
-     │    can return to     │                        │
-     │    the app."         │                        │
+     │ 18. Gateway sends OTP│                        │
+     │     via WhatsApp     │                        │
+     │     reply            │                        │
      │◄─────────────────────┤                        │
      │                      │                        │
-     │  ── OR on failure ── │                        │
+     │  "Your OTP is: 1234" │                        │
      │                      │                        │
-     │ ❌ "Verification     │                        │
-     │    failed: <reason>" │                        │
-     │◄─────────────────────┤                        │
+     │ 19. User enters OTP  │                        │
+     │     in PWA login     │                        │
+     │     screen           ├ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ │
+     │                      │                        │ 20. Backend verifies
+     │                      │                        │     OTP, issues
+     │                      │                        │     session JWT
+     │                      │                        │
+     │                      │                        │ 21. If new user →
+     │                      │                        │     profile capture
+     │                      │                        │     screen
 ```
+
+### 3.3 DevOps Override
+
+If the sender phone does not match the `mobile` claim in the JWT, the gateway checks whether the sender's number is flagged as a **DevOps** number in the configuration. DevOps numbers are allowed to proceed regardless of phone mismatch — this supports testing and operational scenarios where a DevOps operator needs to verify on behalf of another number.
+
+If the sender is neither matching nor DevOps, the gateway sends an error message back via WhatsApp.
 
 ---
 
@@ -145,7 +193,7 @@ The JWT is parsed without signature verification first (header-only or claims pe
 | Claim | Type | Required | Description |
 |-------|------|----------|-------------|
 | `mobile` | string | ✅ | User's phone number in E.164 digits (no `+`), e.g. `"910987654321"` |
-| `app_name` | string | ✅ | Application identifier, lowercase-with-dashes (e.g. `"orez-laundry-app"`) |
+| `app_name` | string | ✅ | Application identifier, lowercase-with-dashes (e.g. `"orez-hyper-local"`) |
 | `challenge_id` | string | ✅ | Unique challenge identifier (UUID) |
 | `iat` | number | ✅ | Issued at (Unix timestamp) |
 | `exp` | number | ✅ | Expiry (Unix timestamp) |
@@ -156,7 +204,7 @@ The JWT is parsed without signature verification first (header-only or claims pe
 ```json
 {
   "mobile": "910987654321",
-  "app_name": "orez-laundry-app",
+  "app_name": "orez-hyper-local",
   "challenge_id": "abc-123",
   "iat": 1739000000,
   "exp": 1739000300
@@ -177,7 +225,7 @@ The JWT is parsed without signature verification first (header-only or claims pe
 | `channel` | string | `"whatsapp"` |
 | `challenge_id` | string | Challenge ID from the incoming verification JWT — binds this callback to a specific challenge |
 | `iss` | string | Gateway issuer (e.g. `"whatsadk-gateway"`) |
-| `aud` | string | App name from the verification token (e.g. `"orez-laundry-app"`) |
+| `aud` | string | App name from the verification token (e.g. `"orez-hyper-local"`) |
 | `iat` | number | Issued at (Unix timestamp) |
 | `exp` | number | Expiry (Unix timestamp, short TTL — 2 minutes) |
 
@@ -188,7 +236,7 @@ The JWT is parsed without signature verification first (header-only or claims pe
   "channel": "whatsapp",
   "challenge_id": "abc-123",
   "iss": "whatsadk-gateway",
-  "aud": "orez-laundry-app",
+  "aud": "orez-hyper-local",
   "iat": 1739000010,
   "exp": 1739000130
 }
@@ -213,18 +261,20 @@ The gateway JWT in the `Authorization` header contains `challenge_id` cryptograp
 
 **Expected responses:**
 
-| Status | Meaning | Gateway action |
-|--------|---------|----------------|
-| `200` | Verification accepted | Send success message to user |
-| `400` | Challenge invalid/expired | Send failure message to user |
-| `401` | JWT rejected | Send failure message to user |
-| `5xx` | Server error | Send retry message or failure to user |
+| Status | Meaning | Response Body | Gateway action |
+|--------|---------|---------------|----------------|
+| `200` | Verification accepted, OTP generated | `{"otp": "123456"}` | Send OTP to user via WhatsApp |
+| `400` | Challenge invalid/expired | — | Send failure message to user |
+| `401` | JWT rejected | — | Send failure message to user |
+| `5xx` | Server error | — | Send retry message or failure to user |
 
 ### 4.4 WhatsApp Response Messages
 
-**Success:**
+**OTP delivery (success):**
 ```
-✅ Verification successful! You can now return to the app.
+🔐 Your verification code is: <OTP>
+
+Enter this code in the app to complete login. This code expires in 5 minutes.
 ```
 
 **Failure (invalid/expired token):**
@@ -232,9 +282,14 @@ The gateway JWT in the `Authorization` header contains `challenge_id` cryptograp
 ❌ Verification failed. The link may have expired. Please request a new one from the app.
 ```
 
-**Failure (phone mismatch):**
+**Failure (phone mismatch — non-DevOps sender):**
 ```
 ❌ Verification failed. Please make sure you're sending from the same number you registered with.
+```
+
+**Failure (blacklisted number):**
+```
+🚫 This number has been blocked. Please contact support for assistance.
 ```
 
 **Failure (server error):**
@@ -255,18 +310,24 @@ verification:
   enabled: true
   callback_timeout: "10s"
   apps:
-    orez-laundry-app:
-      public_key_path: "secrets/apps/orez-laundry-app/public.pem"
-      callback_base_url: "https://api.orezlaundry.com/api/v1/auth/whatsapp"
+    orez-hyper-local:
+      public_key_path: "secrets/apps/orez-hyper-local/public.pem"
+      callback_base_url: "https://api.qzip.in/api/v1/auth/whatsapp"
     another-app:
       public_key_path: "secrets/apps/another-app/public.pem"
       callback_base_url: "https://api.another-app.com/api/v1/auth/whatsapp"
+  store_path: "gateway.db"       # SQLite database for blacklisted numbers
+  devops_numbers:
+    - "919999999999"    # DevOps numbers allowed to bypass phone mismatch
   messages:
-    success: "✅ Verification successful! You can now return to the app."
+    otp_delivery: "🔐 Your verification code is: %s\n\nEnter this code in the app to complete login. This code expires in 5 minutes."
     expired: "❌ Verification failed. The link may have expired. Please request a new one from the app."
     phone_mismatch: "❌ Verification failed. Please make sure you're sending from the same number you registered with."
+    blacklisted: "🚫 This number has been blocked from verification."
     error: "⚠️ Something went wrong. Please try again in a moment."
 ```
+
+**Design rationale — database-backed blacklist:** Blacklisted numbers are stored in a SQLite database (`gateway.db` by default) rather than static YAML config. The `blacklisted_numbers` table (with `phone`, `reason`, `created_at` columns) is auto-created on startup. This allows adding/removing numbers at runtime without restarting the gateway. Numbers use E.164 digits format (e.g. `"910987654321"`).
 
 **Design rationale — multi-app support:** The gateway may serve multiple applications simultaneously. Each app is identified by `app_name` in the verification JWT, and the gateway looks up the corresponding public key. This avoids deploying separate gateway instances per app.
 
@@ -276,8 +337,8 @@ verification:
 |----------|-------------|
 | `VERIFICATION_ENABLED` | `true`/`false` — master switch |
 | `VERIFICATION_CALLBACK_TIMEOUT` | HTTP timeout for callback requests (default `10s`) |
-| `VERIFICATION_APP_<NAME>_PUBLIC_KEY_PATH` | Public key path per app (e.g. `VERIFICATION_APP_OREZ_LAUNDRY_APP_PUBLIC_KEY_PATH`) |
-| `VERIFICATION_APP_<NAME>_CALLBACK_BASE_URL` | Callback base URL per app (e.g. `VERIFICATION_APP_OREZ_LAUNDRY_APP_CALLBACK_BASE_URL`) |
+| `VERIFICATION_APP_<NAME>_PUBLIC_KEY_PATH` | Public key path per app (e.g. `VERIFICATION_APP_OREZ_HYPER_LOCAL_PUBLIC_KEY_PATH`) |
+| `VERIFICATION_APP_<NAME>_CALLBACK_BASE_URL` | Callback base URL per app (e.g. `VERIFICATION_APP_OREZ_HYPER_LOCAL_CALLBACK_BASE_URL`) |
 
 ### 5.3 Key File Organization
 
@@ -285,8 +346,8 @@ verification:
 secrets/
 ├── jwt_private.pem              # Gateway's own private key (existing, for signing callback JWTs)
 └── apps/
-    ├── orez-laundry-app/
-    │   └── public.pem           # orez-laundry-app's RS256 public key
+    ├── orez-hyper-local/
+    │   └── public.pem           # orez-hyper-local's RS256 public key
     └── another-app/
         └── public.pem           # another-app's RS256 public key
 ```
@@ -295,7 +356,7 @@ secrets/
 
 ## 6. Implementation Plan
 
-### Phase 1: Verification Config + Key Registry
+### Phase 1: Verification Config + Key Registry + Blacklist
 
 **File:** `internal/config/config.go`
 
@@ -306,18 +367,21 @@ type VerificationConfig struct {
     Enabled         bool                       `yaml:"enabled"`
     CallbackTimeout string                     `yaml:"callback_timeout"` // e.g. "10s"
     Apps            map[string]AppVerifyConfig  `yaml:"apps"`
+    Blacklist       []string                   `yaml:"blacklist"`
+    DevOpsNumbers   []string                   `yaml:"devops_numbers"`
     Messages        VerificationMessages        `yaml:"messages"`
 }
 
 type AppVerifyConfig struct {
     PublicKeyPath   string `yaml:"public_key_path"`
-    CallbackBaseURL string `yaml:"callback_base_url"` // e.g. "https://api.example.com/api/v1/auth/whatsapp"
+    CallbackBaseURL string `yaml:"callback_base_url"` // e.g. "https://api.qzip.in/api/v1/auth/whatsapp"
 }
 
 type VerificationMessages struct {
-    Success       string `yaml:"success"`
+    OTPDelivery   string `yaml:"otp_delivery"`
     Expired       string `yaml:"expired"`
     PhoneMismatch string `yaml:"phone_mismatch"`
+    Blacklisted   string `yaml:"blacklisted"`
     Error         string `yaml:"error"`
 }
 ```
@@ -328,16 +392,20 @@ Add `Verification VerificationConfig` to the root `Config` struct.
 
 ```go
 type KeyRegistry struct {
-    appKeys         map[string]*rsa.PublicKey  // app_name → public key
-    callbackBaseURLs map[string]string         // app_name → callback base URL
+    appKeys          map[string]*rsa.PublicKey  // app_name → public key
+    callbackBaseURLs map[string]string          // app_name → callback base URL
+    blacklist        map[string]bool            // phone → blocked
+    devOpsNumbers    map[string]bool            // phone → is devops
 }
 
-func NewKeyRegistry(apps map[string]AppVerifyConfig) (*KeyRegistry, error)
+func NewKeyRegistry(apps map[string]AppVerifyConfig, blacklist []string, devOpsNumbers []string) (*KeyRegistry, error)
 func (r *KeyRegistry) GetAppPublicKey(appName string) (*rsa.PublicKey, error)
 func (r *KeyRegistry) GetCallbackBaseURL(appName string) (string, error)
+func (r *KeyRegistry) IsBlacklisted(phone string) bool
+func (r *KeyRegistry) IsDevOps(phone string) bool
 ```
 
-Load all app public keys at startup. Return a clear error if any key file is missing or unparseable.
+Load all app public keys at startup. Return a clear error if any key file is missing or unparseable. Blacklist and DevOps numbers are stored as sets for O(1) lookup.
 
 ---
 
@@ -407,31 +475,47 @@ func (h *Handler) Handle(ctx context.Context, senderPhone, messageBody string) s
         return "" // not a verification token — caller should forward to ADK
     }
 
-    // 2. Look up app public key
+    // 2. Check blacklist
+    senderNormalized := normalizePhone(senderPhone)
+    if h.keys.IsBlacklisted(senderNormalized) {
+        h.logger.Warn("blacklisted number attempted verification",
+            "sender", senderNormalized,
+        )
+        return h.messages.Blacklisted
+    }
+
+    // 3. Look up app public key
     appKey, err := h.keys.GetAppPublicKey(claims.AppName)
     if err != nil {
         h.logger.Warn("unknown app", "app_name", claims.AppName)
         return h.messages.Error
     }
 
-    // 3. Full signature verification
+    // 4. Full signature verification
     verified, err := auth.VerifyVerificationToken(messageBody, appKey)
     if err != nil {
         h.logger.Warn("verification token invalid", "error", err, "app", claims.AppName)
         return h.messages.Expired
     }
 
-    // 4. Phone number match (E.164 digits, exact comparison)
-    senderNormalized := normalizePhone(senderPhone)
-    if senderNormalized != normalizePhone(verified.Mobile) {
-        h.logger.Warn("phone mismatch",
+    // 5. Phone number match (E.164 digits, exact comparison)
+    //    DevOps numbers bypass the phone mismatch check
+    claimNormalized := normalizePhone(verified.Mobile)
+    if senderNormalized != claimNormalized {
+        if !h.keys.IsDevOps(senderNormalized) {
+            h.logger.Warn("phone mismatch",
+                "sender", senderNormalized,
+                "claim_mobile", claimNormalized,
+            )
+            return h.messages.PhoneMismatch
+        }
+        h.logger.Info("devops override: phone mismatch allowed",
             "sender", senderNormalized,
-            "claim_mobile", verified.Mobile,
+            "claim_mobile", claimNormalized,
         )
-        return h.messages.PhoneMismatch
     }
 
-    // 5. Resolve callback URL from static config (NOT from JWT)
+    // 6. Resolve callback URL from static config (NOT from JWT)
     callbackBaseURL, err := h.keys.GetCallbackBaseURL(verified.AppName)
     if err != nil {
         h.logger.Error("no callback URL configured", "app", verified.AppName)
@@ -439,15 +523,16 @@ func (h *Handler) Handle(ctx context.Context, senderPhone, messageBody string) s
     }
     callbackURL := callbackBaseURL + "/callback?challenge_id=" + url.QueryEscape(verified.ChallengeID)
 
-    // 6. Sign callback JWT (includes challenge_id)
+    // 7. Sign callback JWT (includes challenge_id)
     callbackJWT, err := h.jwtGen.TokenWithAudienceAndChallenge(senderNormalized, verified.AppName, verified.ChallengeID)
     if err != nil {
         h.logger.Error("failed to sign callback JWT", "error", err)
         return h.messages.Error
     }
 
-    // 7. POST to callback URL
-    if err := h.postCallback(ctx, callbackURL, callbackJWT); err != nil {
+    // 8. POST to callback URL and receive OTP
+    otp, err := h.postCallback(ctx, callbackURL, callbackJWT)
+    if err != nil {
         h.logger.Error("callback failed",
             "url", callbackURL,
             "error", err,
@@ -455,38 +540,53 @@ func (h *Handler) Handle(ctx context.Context, senderPhone, messageBody string) s
         return h.messages.Error
     }
 
-    // 7. Success
-    h.logger.Info("verification successful",
+    // 9. Send OTP to user via WhatsApp reply
+    h.logger.Info("verification successful, OTP relayed",
         "phone", senderNormalized,
         "app", verified.AppName,
         "challenge_id", verified.ChallengeID,
     )
-    return h.messages.Success
+    return fmt.Sprintf(h.messages.OTPDelivery, otp)
 }
 ```
 
 **`postCallback` method:**
 
 ```go
-func (h *Handler) postCallback(ctx context.Context, callbackURL, jwt string) error {
+// callbackResponse represents the JSON response from the app backend callback.
+type callbackResponse struct {
+    OTP string `json:"otp"`
+}
+
+func (h *Handler) postCallback(ctx context.Context, callbackURL, jwt string) (string, error) {
     req, err := http.NewRequestWithContext(ctx, http.MethodPost, callbackURL, nil)
     if err != nil {
-        return fmt.Errorf("create request: %w", err)
+        return "", fmt.Errorf("create request: %w", err)
     }
     req.Header.Set("Authorization", "Bearer "+jwt)
     req.Header.Set("Content-Type", "application/json")
 
     resp, err := h.httpClient.Do(req)
     if err != nil {
-        return fmt.Errorf("execute callback: %w", err)
+        return "", fmt.Errorf("execute callback: %w", err)
     }
     defer resp.Body.Close()
 
+    body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+
     if resp.StatusCode >= 400 {
-        body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-        return fmt.Errorf("callback returned %d: %s", resp.StatusCode, string(body))
+        return "", fmt.Errorf("callback returned %d: %s", resp.StatusCode, string(body))
     }
-    return nil
+
+    var cbResp callbackResponse
+    if err := json.Unmarshal(body, &cbResp); err != nil {
+        return "", fmt.Errorf("parse callback response: %w", err)
+    }
+    if cbResp.OTP == "" {
+        return "", fmt.Errorf("callback response missing otp field")
+    }
+
+    return cbResp.OTP, nil
 }
 ```
 
@@ -583,13 +683,17 @@ func main() {
     // NEW: Verification handler
     var verifyHandler *verification.Handler
     if cfg.Verification.Enabled {
-        // Load app public keys
-        keyRegistry, err := auth.NewKeyRegistry(cfg.Verification.Apps)
+        // Load app public keys, blacklist, and devops numbers
+        keyRegistry, err := auth.NewKeyRegistry(cfg.Verification.Apps, cfg.Verification.Blacklist, cfg.Verification.DevOpsNumbers)
         if err != nil {
             logger.Error("failed to load verification app keys", "error", err)
             os.Exit(1)
         }
-        logger.Info("verification enabled", "apps", len(cfg.Verification.Apps))
+        logger.Info("verification enabled",
+            "apps", len(cfg.Verification.Apps),
+            "blacklisted", len(cfg.Verification.Blacklist),
+            "devops_numbers", len(cfg.Verification.DevOpsNumbers),
+        )
 
         timeout, _ := time.ParseDuration(cfg.Verification.CallbackTimeout)
         if timeout == 0 {
@@ -630,12 +734,13 @@ func main() {
 |---|-------|-----------------|
 | 1 | Message looks like JWT (`eyJ` prefix, 3 dot-separated parts) | Forward to ADK (not a verification token) |
 | 2 | JWT contains `mobile`, `app_name`, `challenge_id` claims | Forward to ADK (not a verification token) |
-| 3 | `app_name` exists in key registry (with public key + `callback_base_url`) | Error message |
-| 4 | RS256 signature valid against app's public key | Expired message |
-| 5 | `exp` is in the future | Expired message |
-| 6 | Sender phone matches `mobile` claim (E.164 digits comparison) | Phone mismatch message |
-| 7 | Callback POST returns 2xx | Success message |
-| 8 | Callback POST returns 4xx/5xx | Error message |
+| 3 | Sender phone is not blacklisted | Blacklisted message |
+| 4 | `app_name` exists in key registry (with public key + `callback_base_url`) | Error message |
+| 5 | RS256 signature valid against app's public key | Expired message |
+| 6 | `exp` is in the future | Expired message |
+| 7 | Sender phone matches `mobile` claim (E.164 digits comparison), OR sender is a DevOps number | Phone mismatch message |
+| 8 | Callback POST returns 2xx with `{"otp":"..."}` | Send OTP via WhatsApp reply |
+| 9 | Callback POST returns 4xx/5xx | Error message |
 
 ### 7.2 Phone Normalization
 
@@ -688,8 +793,14 @@ At startup, validate that all configured `callback_base_url` values use HTTPS (e
 | `TestKeyRegistry_LoadKeys` | `auth/key_registry_test.go` | Load valid PEM files |
 | `TestKeyRegistry_MissingKey` | `auth/key_registry_test.go` | Missing file → error |
 | `TestKeyRegistry_UnknownApp` | `auth/key_registry_test.go` | Unknown app name → error |
-| `TestHandler_SuccessFlow` | `verification/handler_test.go` | Full flow with mock HTTP server → success message |
-| `TestHandler_PhoneMismatch` | `verification/handler_test.go` | Sender ≠ claim → mismatch message |
+| `TestKeyRegistry_IsBlacklisted` | `auth/key_registry_test.go` | Blacklisted number → true |
+| `TestKeyRegistry_IsDevOps` | `auth/key_registry_test.go` | DevOps number → true |
+| `TestHandler_SuccessFlow` | `verification/handler_test.go` | Full flow with mock HTTP server → OTP relayed |
+| `TestHandler_BlacklistedNumber` | `verification/handler_test.go` | Blacklisted sender → blocked message |
+| `TestHandler_PhoneMismatch` | `verification/handler_test.go` | Sender ≠ claim (non-DevOps) → mismatch message |
+| `TestHandler_PhoneMismatch_DevOps` | `verification/handler_test.go` | Sender ≠ claim (DevOps) → allowed, OTP relayed |
+| `TestHandler_CallbackReturnsOTP` | `verification/handler_test.go` | Callback returns `{"otp":"123456"}` → OTP message sent |
+| `TestHandler_CallbackMissingOTP` | `verification/handler_test.go` | Callback returns `{}` → error message |
 | `TestHandler_CallbackFails` | `verification/handler_test.go` | Callback returns 500 → error message |
 | `TestHandler_ExpiredToken` | `verification/handler_test.go` | Expired JWT → expired message |
 | `TestTokenWithAudienceAndChallenge` | `auth/jwt_test.go` | Dynamic audience + challenge_id in callback JWT |
@@ -699,25 +810,29 @@ At startup, validate that all configured `callback_base_url` values use HTTPS (e
 Create `test/integration/verification_test.go`:
 
 1. Generate RSA keypair in test
-2. Start mock HTTP server as "app backend callback"
+2. Start mock HTTP server as "app backend callback" that returns `{"otp":"654321"}`
 3. Sign a verification JWT with the test private key
 4. Call `handler.Handle(ctx, senderPhone, verificationJWT)`
 5. Assert:
    - Mock server received the callback POST
    - Callback had valid `Authorization: Bearer <jwt>` header
    - Callback JWT contains correct `user_id`, `channel`, `challenge_id`, `iss`, `aud`
-   - Handler returned success message
+   - Handler returned OTP delivery message containing "654321"
+6. Test blacklisted number → no callback made, blocked message returned
+7. Test DevOps override → callback made despite phone mismatch
 
 ### 8.3 Manual E2E Test
 
-1. Start the Kln API with `DEBUG_AUTH=false` and proper RSA keys
-2. Start WhatsADK gateway with the Kln API's public key configured
-3. Call `POST /api/v1/auth/whatsapp/init` with a test phone number
-4. Copy the JWT from the `wa_link` response
-5. Send the JWT from the matching WhatsApp number to the gateway
-6. Verify:
-   - Gateway sends success message back
-   - `GET /api/v1/auth/whatsapp/status` returns `verified` with tokens
+1. Start the orez-hyper-local API with proper RSA keys
+2. Start WhatsADK gateway with the app's public key configured
+3. Open the PWA → enter a test phone number → get the WhatsApp deep link
+4. Click the link → send the JWT from the matching WhatsApp number to the gateway
+5. Verify:
+   - Gateway sends OTP message back via WhatsApp
+   - Enter the OTP in the PWA login screen → access granted
+   - For a new (unregistered) number: profile capture screen appears after OTP entry
+6. Test with a blacklisted number → verify blocked message received
+7. Test with a DevOps number sending on behalf of another phone → verify OTP received
 
 ---
 
@@ -734,6 +849,9 @@ Create `test/integration/verification_test.go`:
 | **Key compromise** | Each app has its own public key; compromising one doesn't affect others |
 | **Man-in-the-middle** | Callback URL must be HTTPS in production; redirects disallowed |
 | **Denial of service** | Rate-limit verification attempts per sender (e.g. 5/minute) |
+| **Number blacklisting** | Gateway checks sender against blacklist before processing; blocked numbers never trigger a callback |
+| **OTP interception** | OTP delivered via WhatsApp (E2E encrypted) and entered in the PWA — two separate channels; attacker needs access to both |
+| **Two-factor assurance** | Factor 1: WhatsApp message (proves phone ownership); Factor 2: OTP entry in PWA (proves browser session continuity) |
 
 ### 9.2 Recommended
 
@@ -750,8 +868,10 @@ Create `test/integration/verification_test.go`:
   - Sender phone (last 4 digits only)
   - App name
   - Challenge ID
-  - Result (success/expired/mismatch/error)
+  - Result (success/expired/mismatch/blacklisted/error)
   - Duration
+
+- **OTP security on backend:** The backend should generate cryptographically random OTPs (6 digits), hash them before storage, and enforce single-use with expiry (5 minutes). The gateway treats the OTP as an opaque string — it only relays it.
 
 ---
 
@@ -761,16 +881,18 @@ Create `test/integration/verification_test.go`:
 |------|--------|-------------|
 | `internal/auth/verify_token.go` | **Create** | `IsVerificationToken`, `VerifyVerificationToken` |
 | `internal/auth/verify_token_test.go` | **Create** | Token detection + verification tests |
-| `internal/auth/key_registry.go` | **Create** | Multi-app public key registry |
-| `internal/auth/key_registry_test.go` | **Create** | Key loading tests |
-| `internal/auth/jwt.go` | **Modify** | Add `TokenWithAudience` method |
+| `internal/auth/key_registry.go` | **Create** | Multi-app public key registry + DevOps lookup |
+| `internal/auth/key_registry_test.go` | **Create** | Key loading, DevOps tests |
+| `internal/store/store.go` | **Create** | SQLite-backed blacklist store (`blacklisted_numbers` table) |
+| `internal/store/store_test.go` | **Create** | Blacklist CRUD tests |
+| `internal/auth/jwt.go` | **Modify** | Add `TokenWithAudienceAndChallenge` method |
 | `internal/auth/jwt_test.go` | **Modify** | Add dynamic audience test |
-| `internal/verification/handler.go` | **Create** | Verification message handler + callback |
-| `internal/verification/handler_test.go` | **Create** | Handler unit tests |
-| `internal/config/config.go` | **Modify** | Add `VerificationConfig` struct |
+| `internal/verification/handler.go` | **Create** | Verification message handler + OTP relay via callback |
+| `internal/verification/handler_test.go` | **Create** | Handler unit tests (incl. OTP, blacklist, DevOps) |
+| `internal/config/config.go` | **Modify** | Add `VerificationConfig` struct with blacklist/DevOps fields |
 | `internal/whatsapp/client.go` | **Modify** | Route verification messages to handler |
 | `cmd/gateway/main.go` | **Modify** | Wire verification handler at startup |
-| `config/config.yaml` | **Modify** | Add `verification:` section |
+| `config/config.yaml` | **Modify** | Add `verification:` section with blacklist + DevOps config |
 
 ---
 
@@ -785,9 +907,9 @@ Create `test/integration/verification_test.go`:
 
 2. **Copy app public keys** to the gateway:
    ```sh
-   mkdir -p secrets/apps/orez-laundry-app/
-   cp /from/app/jwt_public.pem secrets/apps/orez-laundry-app/public.pem
-   chmod 644 secrets/apps/orez-laundry-app/public.pem
+   mkdir -p secrets/apps/orez-hyper-local/
+   cp /from/app/jwt_public.pem secrets/apps/orez-hyper-local/public.pem
+   chmod 644 secrets/apps/orez-hyper-local/public.pem
    ```
 
 3. **Copy gateway public key** to each app backend:
@@ -801,10 +923,13 @@ Create `test/integration/verification_test.go`:
    verification:
      enabled: true
      callback_timeout: "10s"
+     store_path: "gateway.db"
      apps:
-       orez-laundry-app:
-         public_key_path: "secrets/apps/orez-laundry-app/public.pem"
-         callback_base_url: "https://api.orezlaundry.com/api/v1/auth/whatsapp"
+       orez-hyper-local:
+         public_key_path: "secrets/apps/orez-hyper-local/public.pem"
+         callback_base_url: "https://api.qzip.in/api/v1/auth/whatsapp"
+     devops_numbers:
+       - "919999999999"
    ```
 
 5. **Update app backend `.env`:**
@@ -812,7 +937,7 @@ Create `test/integration/verification_test.go`:
    WHATSAPP_VERIFY_PRIVATE_KEY_PATH=secrets/jwt_private.pem
    WHATSADK_PUBLIC_KEY_PATH=secrets/whatsadk_public.pem
    WHATSADK_EXPECTED_ISSUER=whatsadk-gateway
-   WHATSADK_EXPECTED_AUDIENCE=orez-laundry-app
+   WHATSADK_EXPECTED_AUDIENCE=orez-hyper-local
    WHATSAPP_BACKEND_NUMBER=910000000000
    ```
 
@@ -820,7 +945,7 @@ Create `test/integration/verification_test.go`:
    ```sh
    # These should produce identical output
    openssl rsa -in secrets/jwt_private.pem -pubout -outform DER | sha256sum
-   openssl rsa -pubin -in secrets/apps/orez-laundry-app/public.pem -outform DER | sha256sum
+   openssl rsa -pubin -in secrets/apps/orez-hyper-local/public.pem -outform DER | sha256sum
    ```
 
 7. **Test end-to-end** with a real WhatsApp number before going live.
@@ -831,12 +956,12 @@ Create `test/integration/verification_test.go`:
 
 | Phase | Description | Estimate |
 |-------|-------------|----------|
-| 1 | Config + key registry | 2–3 hours |
+| 1 | Config + key registry + blacklist/DevOps | 3–4 hours |
 | 2 | Token parser + detection | 2–3 hours |
-| 3 | Verification handler + callback | 3–4 hours |
+| 3 | Verification handler + OTP relay callback | 3–4 hours |
 | 4 | JWT generator enhancement | 30 minutes |
 | 5 | Message router integration | 1–2 hours |
 | 6 | Startup wiring | 1 hour |
-| — | Unit + integration tests | 3–4 hours |
+| — | Unit + integration tests | 4–5 hours |
 | — | Manual E2E testing | 1–2 hours |
-| **Total** | | **~2 days** |
+| **Total** | | **~2.5 days** |
