@@ -9,8 +9,8 @@ This document describes the architecture of **WhatsADK**, a Go gateway that brid
 │  WhatsApp    │◀────────▶│        WhatsADK Gateway      │────────▶│  ADK Agent    │
 │  Users       │  whatsmeow│                              │  HTTP   │  Service      │
 │              │  (WebSocket)│  ┌────────┐  ┌───────────┐ │  REST   │  (Remote)     │
-└──────────────┘          │  │ SQLite  │  │ JWT Auth  │ │  /SSE   └───────────────┘
-                          │  │ Session │  │ (RS256)   │ │
+└──────────────┘          │  │PostgreSQL│  │ JWT Auth  │ │  /SSE   └───────────────┘
+                          │  │ Session  │  │ (RS256)   │ │
                           │  └────────┘  └───────────┘ │
                           │       ┌──────────────┐      │          ┌───────────────┐
                           │       │ Verification │──────│─────────▶│  3rd-Party    │
@@ -74,7 +74,7 @@ After loading YAML, applies sensible defaults and overrides from environment var
 Wraps the [whatsmeow](https://github.com/tulir/whatsmeow) library to provide:
 
 - **QR code authentication** — displays QR in terminal on first run
-- **Persistent sessions** — stored in SQLite via `sqlstore`
+- **Persistent sessions** — stored in PostgreSQL via `sqlstore`
 - **Message event handling** — routes incoming messages through a pipeline:
   1. Ignores messages from self and group chats
   2. Extracts text from conversation or extended text messages
@@ -183,7 +183,7 @@ whatsapp.Client → SendMessage() back to user
 | Dependency | Purpose |
 |---|---|
 | [whatsmeow](https://github.com/tulir/whatsmeow) | WhatsApp Web multi-device API (WebSocket) |
-| [go-sqlite3](https://github.com/mattn/go-sqlite3) | SQLite driver for WhatsApp session persistence |
+| [lib/pq](https://github.com/lib/pq) | PostgreSQL driver for WhatsApp session persistence |
 | [golang-jwt/jwt/v5](https://github.com/golang-jwt/jwt) | RS256 JWT token generation and parsing |
 | [qrterminal](https://github.com/mdp/qrterminal) | QR code rendering in terminal |
 | [yaml.v3](https://pkg.go.dev/gopkg.in/yaml.v3) | YAML configuration parsing |
@@ -199,7 +199,7 @@ whatsapp.Client → SendMessage() back to user
 ## Build & Test
 
 ```bash
-# Build (requires CGO for SQLite)
+# Build
 go build -o whatsadk ./cmd/gateway
 
 # Run all tests

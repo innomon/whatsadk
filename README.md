@@ -5,7 +5,7 @@ A Go utility that connects WhatsApp via QR code and proxies messages to a remote
 ## Features
 
 - Connect to WhatsApp using QR code scanning
-- Persistent WhatsApp session storage (SQLite)
+- Persistent WhatsApp session storage (PostgreSQL)
 - Proxy incoming WhatsApp messages to remote ADK Agent
 - Support for both `/run` (single response) and `/run_sse` (streaming) endpoints
 - Per-user session management on the ADK service
@@ -16,7 +16,7 @@ A Go utility that connects WhatsApp via QR code and proxies messages to a remote
 ## Requirements
 
 - Go 1.23+
-- CGO enabled (for SQLite)
+- PostgreSQL database
 - Running ADK Agent service (local or remote)
 
 ## Installation
@@ -37,6 +37,7 @@ go build -o whatsadk ./cmd/gateway
 | `AUTH_JWT_PRIVATE_KEY_PATH` | No | Path to RSA private key PEM file for JWT auth |
 | `VERIFICATION_ENABLED` | No | Enable reverse OTP verification (`true`) |
 | `VERIFICATION_CALLBACK_TIMEOUT` | No | Timeout for verification callback HTTP requests (default: `10s`) |
+| `WHATSAPP_STORE_DSN` | No | PostgreSQL connection string for WhatsApp session storage |
 | `VERIFICATION_DATABASE_URL` | No | PostgreSQL connection string for blacklist store |
 | `CONFIG_FILE` | No | Path to config file |
 
@@ -52,7 +53,7 @@ The gateway searches for `config.yaml` in this order:
 Example `config/config.yaml`:
 ```yaml
 whatsapp:
-  store_path: "whatsapp.db"    # SQLite database for WhatsApp session
+  store_dsn: "postgres://localhost:5432/whatsadk?sslmode=disable"  # PostgreSQL for WhatsApp session
   log_level: "INFO"            # DEBUG, INFO, WARN, ERROR
   whitelisted_users:           # Phone numbers allowed regardless of country
     - "1234567890"
@@ -110,7 +111,7 @@ ADK_ENDPOINT=https://my-adk-service.example.com ./whatsadk
 
 ### Subsequent Runs
 
-The session is persisted in `whatsapp.db`. Future runs will reconnect automatically.
+The session is persisted in PostgreSQL. Future runs will reconnect automatically.
 
 ## How It Works
 
@@ -124,7 +125,7 @@ The session is persisted in `whatsapp.db`. Future runs will reconnect automatica
        │              or /run_sse                   │
        │                     │                      │
        │              ┌──────┴──────┐               │
-       │              │  SQLite DB  │               │
+       │              │ PostgreSQL  │               │
        │              │  (WhatsApp  │               │
        │              │   session)  │               │
        │              └─────────────┘               │

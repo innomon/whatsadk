@@ -16,7 +16,7 @@ import (
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/lib/pq"
 
 	"github.com/innomon/whatsadk/internal/agent"
 	"github.com/innomon/whatsadk/internal/auth"
@@ -37,7 +37,7 @@ type Client struct {
 func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client, verifyHandler *verification.Handler) (*Client, error) {
 	log := waLog.Stdout("WhatsApp", cfg.WhatsApp.LogLevel, true)
 
-	container, err := sqlstore.New(ctx, "sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on", cfg.WhatsApp.StorePath), log)
+	container, err := sqlstore.New(ctx, "postgres", cfg.WhatsApp.StoreDSN, log)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create store: %w", err)
 	}

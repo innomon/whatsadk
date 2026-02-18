@@ -1,5 +1,5 @@
 whatsapp:
-  store_path: "whatsapp.db"
+  store_dsn: "postgres://localhost:5432/whatsadk?sslmode=disable"
   log_level: "INFO"
   whitelisted_users: []
   # whitelisted_users:

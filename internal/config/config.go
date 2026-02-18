@@ -48,7 +48,7 @@ type JWTConfig struct {
 }
 
 type WhatsAppConfig struct {
-	StorePath        string   `yaml:"store_path"`
+	StoreDSN         string   `yaml:"store_dsn"`
 	LogLevel         string   `yaml:"log_level"`
 	WhitelistedUsers []string `yaml:"whitelisted_users"`
 }
@@ -123,8 +123,8 @@ func defaultConfig() *Config {
 }
 
 func (c *Config) applyDefaults() {
-	if c.WhatsApp.StorePath == "" {
-		c.WhatsApp.StorePath = "whatsapp.db"
+	if c.WhatsApp.StoreDSN == "" {
+		c.WhatsApp.StoreDSN = "postgres://localhost:5432/whatsadk?sslmode=disable"
 	}
 	if c.WhatsApp.LogLevel == "" {
 		c.WhatsApp.LogLevel = "INFO"
@@ -188,5 +188,8 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if v := os.Getenv("VERIFICATION_DATABASE_URL"); v != "" {
 		c.Verification.DatabaseURL = v
+	}
+	if v := os.Getenv("WHATSAPP_STORE_DSN"); v != "" {
+		c.WhatsApp.StoreDSN = v
 	}
 }
