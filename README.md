@@ -181,14 +181,19 @@ For the ADK Go server-side verification implementation, see [docs/adk-jwt-auth-s
 
 The gateway supports a Reverse OTP flow where third-party apps can verify a user's phone number ownership via WhatsApp:
 
-1. The app generates a signed JWT containing the user's phone number, app name, callback URL, and challenge ID
+1. The app generates a signed JWT containing the user's phone number, app name, and challenge ID
 2. The user sends this token as a WhatsApp message to the gateway
 3. The gateway verifies:
    - The token signature against the app's registered public key
    - The token hasn't expired
-   - The sender's WhatsApp phone number matches the `mobile` claim in the token
-4. On success, the gateway POSTs a signed callback JWT (with `audience` set to the app name) to the app's callback URL
+   - The sender's WhatsApp phone number matches the `mobile` claim (E.164 digits comparison)
+4. On success, the gateway constructs the callback URL from **static per-app config** (not from the JWT) and POSTs a signed callback JWT containing `user_id`, `challenge_id`, and `audience` set to the app name
 5. The user receives a confirmation message in WhatsApp
+
+**Security design:**
+- **No `callback_url` in JWT** — callback destination is derived from static config to prevent SSRF
+- **`challenge_id` bound in callback JWT** — prevents confused deputy / cross-challenge replay attacks
+- **Redirects disallowed** on callback HTTP client
 
 ### Configuration
 
@@ -199,6 +204,7 @@ verification:
   apps:
     my-app:
       public_key_path: "secrets/my_app_public.pem"
+      callback_base_url: "https://api.my-app.com/api/v1/auth/whatsapp"
   messages:
     success: "✅ Verification successful! You can now return to the app."
     expired: "❌ Verification failed. The link may have expired."
@@ -206,7 +212,7 @@ verification:
     error: "⚠️ Something went wrong. Please try again."
 ```
 
-Each app must register its RSA public key so the gateway can verify incoming verification tokens.
+Each app must register its RSA public key and callback base URL so the gateway can verify incoming verification tokens and call back to the correct endpoint.
 
 ## Connecting to Different ADK Services
 

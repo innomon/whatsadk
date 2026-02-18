@@ -76,13 +76,15 @@ incoming message
 is message body a valid JWT?  ──no──► forward to ADK agent (existing flow)
     │ yes
     ▼
-does JWT contain `callback_url` + `mobile` claims?  ──no──► forward to ADK agent
+does JWT contain `mobile` + `app_name` + `challenge_id` claims?  ──no──► forward to ADK agent
     │ yes
     ▼
 verification flow
 ```
 
 The JWT is parsed without signature verification first (header-only or claims peek) to check for verification-specific claims. Full RS256 signature verification happens only after identifying it as a verification token.
+
+> **Security note — no `callback_url` in the JWT:** The callback destination is **not** embedded in the app-signed JWT. Instead, the gateway derives it from static per-app config (`apps[app_name].callback_base_url`). This prevents SSRF attacks where an attacker who obtains a legitimately signed token could cause the gateway to POST credentials to an attacker-controlled URL.
 
 ### 3.2 Verification Flow
 
@@ -100,11 +102,16 @@ The JWT is parsed without signature verification first (header-only or claims pe
      │                      │ 5. Check exp           │
      │                      │ 6. Match sender phone  │
      │                      │    vs claim.mobile     │
+     │                      │ 7. Resolve callback URL│
+     │                      │    from app config     │
      │                      │                        │
-     │                      │ 7. Sign callback JWT   │
-     │                      │    (GW private key)    │
+     │                      │ 8. Sign callback JWT   │
+     │                      │    (GW private key,    │
+     │                      │     incl challenge_id) │
      │                      │                        │
-     │                      │ POST callback_url      │
+     │                      │ POST callback_base_url │
+     │                      │  + /callback?          │
+     │                      │  challenge_id=...      │
      │                      ├───────────────────────►│
      │                      │                        │ Verify GW JWT
      │                      │                        │ Mark challenge verified
@@ -137,19 +144,19 @@ The JWT is parsed without signature verification first (header-only or claims pe
 
 | Claim | Type | Required | Description |
 |-------|------|----------|-------------|
-| `mobile` | string | ✅ | User's phone number without `+` (e.g. `"910987654321"`) |
+| `mobile` | string | ✅ | User's phone number in E.164 digits (no `+`), e.g. `"910987654321"` |
 | `app_name` | string | ✅ | Application identifier, lowercase-with-dashes (e.g. `"orez-laundry-app"`) |
-| `callback_url` | string | ✅ | Full URL the gateway should POST to after verification |
 | `challenge_id` | string | ✅ | Unique challenge identifier (UUID) |
 | `iat` | number | ✅ | Issued at (Unix timestamp) |
 | `exp` | number | ✅ | Expiry (Unix timestamp) |
+
+> **Removed:** `callback_url` is no longer included in this JWT. The gateway resolves the callback destination from static per-app config (`callback_base_url`). See §5.1.
 
 **Example decoded payload:**
 ```json
 {
   "mobile": "910987654321",
   "app_name": "orez-laundry-app",
-  "callback_url": "https://api.example.com/api/v1/auth/whatsapp/callback?challenge_id=abc-123",
   "challenge_id": "abc-123",
   "iat": 1739000000,
   "exp": 1739000300
@@ -166,8 +173,9 @@ The JWT is parsed without signature verification first (header-only or claims pe
 
 | Claim | Type | Value |
 |-------|------|-------|
-| `user_id` | string | Sender's WhatsApp phone number without `+` (e.g. `"910987654321"`) |
+| `user_id` | string | Sender's WhatsApp phone number in E.164 digits (no `+`), e.g. `"910987654321"` |
 | `channel` | string | `"whatsapp"` |
+| `challenge_id` | string | Challenge ID from the incoming verification JWT — binds this callback to a specific challenge |
 | `iss` | string | Gateway issuer (e.g. `"whatsadk-gateway"`) |
 | `aud` | string | App name from the verification token (e.g. `"orez-laundry-app"`) |
 | `iat` | number | Issued at (Unix timestamp) |
@@ -178,6 +186,7 @@ The JWT is parsed without signature verification first (header-only or claims pe
 {
   "user_id": "910987654321",
   "channel": "whatsapp",
+  "challenge_id": "abc-123",
   "iss": "whatsadk-gateway",
   "aud": "orez-laundry-app",
   "iat": 1739000010,
@@ -187,15 +196,20 @@ The JWT is parsed without signature verification first (header-only or claims pe
 
 ### 4.3 Callback HTTP Request
 
+The callback URL is constructed by the gateway from static config:
 ```
-POST <callback_url>
+<callback_base_url>/callback?challenge_id=<challenge_id>
+```
+
+```
+POST <constructed_callback_url>
 Authorization: Bearer <gateway_jwt>
 Content-Type: application/json
 
 (empty body)
 ```
 
-The `callback_url` already contains the `challenge_id` as a query parameter. The gateway JWT in the `Authorization` header is all the app backend needs.
+The gateway JWT in the `Authorization` header contains `challenge_id` cryptographically bound to the token. The backend **must** verify that the `challenge_id` in the JWT matches the `challenge_id` in the URL query parameter.
 
 **Expected responses:**
 
@@ -243,8 +257,10 @@ verification:
   apps:
     orez-laundry-app:
       public_key_path: "secrets/apps/orez-laundry-app/public.pem"
+      callback_base_url: "https://api.orezlaundry.com/api/v1/auth/whatsapp"
     another-app:
       public_key_path: "secrets/apps/another-app/public.pem"
+      callback_base_url: "https://api.another-app.com/api/v1/auth/whatsapp"
   messages:
     success: "✅ Verification successful! You can now return to the app."
     expired: "❌ Verification failed. The link may have expired. Please request a new one from the app."
@@ -261,6 +277,7 @@ verification:
 | `VERIFICATION_ENABLED` | `true`/`false` — master switch |
 | `VERIFICATION_CALLBACK_TIMEOUT` | HTTP timeout for callback requests (default `10s`) |
 | `VERIFICATION_APP_<NAME>_PUBLIC_KEY_PATH` | Public key path per app (e.g. `VERIFICATION_APP_OREZ_LAUNDRY_APP_PUBLIC_KEY_PATH`) |
+| `VERIFICATION_APP_<NAME>_CALLBACK_BASE_URL` | Callback base URL per app (e.g. `VERIFICATION_APP_OREZ_LAUNDRY_APP_CALLBACK_BASE_URL`) |
 
 ### 5.3 Key File Organization
 
@@ -293,7 +310,8 @@ type VerificationConfig struct {
 }
 
 type AppVerifyConfig struct {
-    PublicKeyPath string `yaml:"public_key_path"`
+    PublicKeyPath   string `yaml:"public_key_path"`
+    CallbackBaseURL string `yaml:"callback_base_url"` // e.g. "https://api.example.com/api/v1/auth/whatsapp"
 }
 
 type VerificationMessages struct {
@@ -310,11 +328,13 @@ Add `Verification VerificationConfig` to the root `Config` struct.
 
 ```go
 type KeyRegistry struct {
-    appKeys map[string]*rsa.PublicKey  // app_name → public key
+    appKeys         map[string]*rsa.PublicKey  // app_name → public key
+    callbackBaseURLs map[string]string         // app_name → callback base URL
 }
 
 func NewKeyRegistry(apps map[string]AppVerifyConfig) (*KeyRegistry, error)
 func (r *KeyRegistry) GetAppPublicKey(appName string) (*rsa.PublicKey, error)
+func (r *KeyRegistry) GetCallbackBaseURL(appName string) (string, error)
 ```
 
 Load all app public keys at startup. Return a clear error if any key file is missing or unparseable.
@@ -330,7 +350,6 @@ Load all app public keys at startup. Return a clear error if any key file is mis
 type VerificationClaims struct {
     Mobile      string `json:"mobile"`
     AppName     string `json:"app_name"`
-    CallbackURL string `json:"callback_url"`
     ChallengeID string `json:"challenge_id"`
     jwt.RegisteredClaims
 }
@@ -347,13 +366,13 @@ func VerifyVerificationToken(raw string, appKey *rsa.PublicKey) (*VerificationCl
 
 **`IsVerificationToken` logic:**
 1. Try `jwt.Parser.ParseUnverified()` to extract claims
-2. Check that `mobile`, `app_name`, and `callback_url` are all non-empty
+2. Check that `mobile`, `app_name`, and `challenge_id` are all non-empty
 3. If yes → return claims (for routing); if no → return nil
 
 **`VerifyVerificationToken` logic:**
 1. `jwt.ParseWithClaims()` with RS256 method enforcement
 2. Validate `exp` is in the future
-3. Validate `mobile`, `app_name`, `callback_url`, `challenge_id` are non-empty
+3. Validate `mobile`, `app_name`, `challenge_id` are non-empty
 4. Return verified claims
 
 ---
@@ -371,7 +390,7 @@ type Handler struct {
     logger     *slog.Logger
 }
 
-func NewHandler(keys *auth.KeyRegistry, jwtGen *auth.JWTGenerator, cfg VerificationConfig, logger *slog.Logger) *Handler
+func NewHandler(keys *auth.KeyRegistry, jwtGen *auth.JWTGenerator, cfg VerificationConfig, httpClient *http.Client, logger *slog.Logger) *Handler
 
 // Handle processes a verification message.
 // Returns the response message to send back to the user via WhatsApp.
@@ -402,9 +421,9 @@ func (h *Handler) Handle(ctx context.Context, senderPhone, messageBody string) s
         return h.messages.Expired
     }
 
-    // 4. Phone number match
-    senderNormalized := stripPlus(senderPhone)
-    if senderNormalized != verified.Mobile {
+    // 4. Phone number match (E.164 digits, exact comparison)
+    senderNormalized := normalizePhone(senderPhone)
+    if senderNormalized != normalizePhone(verified.Mobile) {
         h.logger.Warn("phone mismatch",
             "sender", senderNormalized,
             "claim_mobile", verified.Mobile,
@@ -412,17 +431,25 @@ func (h *Handler) Handle(ctx context.Context, senderPhone, messageBody string) s
         return h.messages.PhoneMismatch
     }
 
-    // 5. Sign callback JWT
-    callbackJWT, err := h.jwtGen.TokenWithAudience(senderNormalized, verified.AppName)
+    // 5. Resolve callback URL from static config (NOT from JWT)
+    callbackBaseURL, err := h.keys.GetCallbackBaseURL(verified.AppName)
+    if err != nil {
+        h.logger.Error("no callback URL configured", "app", verified.AppName)
+        return h.messages.Error
+    }
+    callbackURL := callbackBaseURL + "/callback?challenge_id=" + url.QueryEscape(verified.ChallengeID)
+
+    // 6. Sign callback JWT (includes challenge_id)
+    callbackJWT, err := h.jwtGen.TokenWithAudienceAndChallenge(senderNormalized, verified.AppName, verified.ChallengeID)
     if err != nil {
         h.logger.Error("failed to sign callback JWT", "error", err)
         return h.messages.Error
     }
 
-    // 6. POST to callback URL
-    if err := h.postCallback(ctx, verified.CallbackURL, callbackJWT); err != nil {
+    // 7. POST to callback URL
+    if err := h.postCallback(ctx, callbackURL, callbackJWT); err != nil {
         h.logger.Error("callback failed",
-            "url", verified.CallbackURL,
+            "url", callbackURL,
             "error", err,
         )
         return h.messages.Error
@@ -472,13 +499,14 @@ func (h *Handler) postCallback(ctx context.Context, callbackURL, jwt string) err
 Add a method to generate callback JWTs with a dynamic audience (the app name):
 
 ```go
-// TokenWithAudience generates a JWT with the specified audience.
-// Used for verification callbacks where the audience is the app_name from the verification token.
-func (g *JWTGenerator) TokenWithAudience(userID, audience string) (string, error) {
+// TokenWithAudienceAndChallenge generates a JWT with the specified audience and challenge_id.
+// Used for verification callbacks — binds the gateway assertion to a specific challenge.
+func (g *JWTGenerator) TokenWithAudienceAndChallenge(userID, audience, challengeID string) (string, error) {
     now := time.Now()
     claims := Claims{
-        UserID:  userID,
-        Channel: "whatsapp",
+        UserID:      userID,
+        Channel:     "whatsapp",
+        ChallengeID: challengeID,
         RegisteredClaims: jwt.RegisteredClaims{
             Issuer:    g.issuer,
             Audience:  jwt.ClaimStrings{audience},
@@ -572,7 +600,12 @@ func main() {
             keyRegistry,
             jwtGen,
             cfg.Verification,
-            &http.Client{Timeout: timeout},
+            &http.Client{
+                Timeout: timeout,
+                CheckRedirect: func(req *http.Request, via []*http.Request) error {
+                    return fmt.Errorf("redirects not allowed for verification callbacks")
+                },
+            },
             logger,
         )
     }
@@ -596,25 +629,23 @@ func main() {
 | # | Check | Failure response |
 |---|-------|-----------------|
 | 1 | Message looks like JWT (`eyJ` prefix, 3 dot-separated parts) | Forward to ADK (not a verification token) |
-| 2 | JWT contains `mobile`, `app_name`, `callback_url` claims | Forward to ADK (not a verification token) |
-| 3 | `app_name` exists in key registry | Error message |
+| 2 | JWT contains `mobile`, `app_name`, `challenge_id` claims | Forward to ADK (not a verification token) |
+| 3 | `app_name` exists in key registry (with public key + `callback_base_url`) | Error message |
 | 4 | RS256 signature valid against app's public key | Expired message |
 | 5 | `exp` is in the future | Expired message |
-| 6 | Sender phone matches `mobile` claim | Phone mismatch message |
-| 7 | `callback_url` is HTTPS (in production) | Error message |
-| 8 | Callback POST returns 2xx | Success message |
-| 9 | Callback POST returns 4xx/5xx | Error message |
+| 6 | Sender phone matches `mobile` claim (E.164 digits comparison) | Phone mismatch message |
+| 7 | Callback POST returns 2xx | Success message |
+| 8 | Callback POST returns 4xx/5xx | Error message |
 
 ### 7.2 Phone Normalization
 
-Both sender phone and JWT `mobile` claim should be compared after stripping:
-- Leading `+`
-- Leading `0` or `00` (country-code prefixed)
-- Spaces, dashes, parentheses
+Both sender phone and JWT `mobile` claim are compared as **E.164 digits** (country code + number, no `+` prefix). The app backend **must** store the `mobile` claim in the same format WhatsApp uses for sender identity.
+
+Normalization strips only non-digit characters — no leading-zero manipulation (which could collapse distinct numbers from different countries):
 
 ```go
 func normalizePhone(phone string) string {
-    // Remove all non-digit characters
+    // Remove all non-digit characters ('+', spaces, dashes, parens)
     digits := strings.Map(func(r rune) rune {
         if r >= '0' && r <= '9' {
             return r
@@ -625,23 +656,20 @@ func normalizePhone(phone string) string {
 }
 ```
 
-### 7.3 Callback URL Validation
+### 7.3 Callback URL Safety
+
+Since callback URLs are now derived from **static config** (not from JWT claims), the primary SSRF risk is eliminated. However, the gateway HTTP client should still follow defensive practices:
 
 ```go
-func validateCallbackURL(raw string, requireHTTPS bool) error {
-    u, err := url.Parse(raw)
-    if err != nil {
-        return fmt.Errorf("invalid URL: %w", err)
-    }
-    if u.Scheme == "" || u.Host == "" {
-        return fmt.Errorf("URL must have scheme and host")
-    }
-    if requireHTTPS && u.Scheme != "https" {
-        return fmt.Errorf("callback URL must use HTTPS")
-    }
-    return nil
+httpClient := &http.Client{
+    Timeout: timeout,
+    CheckRedirect: func(req *http.Request, via []*http.Request) error {
+        return fmt.Errorf("redirects not allowed for verification callbacks")
+    },
 }
 ```
+
+At startup, validate that all configured `callback_base_url` values use HTTPS (except in development mode).
 
 ---
 
@@ -653,7 +681,7 @@ func validateCallbackURL(raw string, requireHTTPS bool) error {
 |------|------|-------------|
 | `TestIsVerificationToken` | `auth/verify_token_test.go` | Valid verification JWT → returns claims |
 | `TestIsVerificationToken_NormalMessage` | `auth/verify_token_test.go` | "Hello world" → returns nil |
-| `TestIsVerificationToken_ADKToken` | `auth/verify_token_test.go` | JWT without `callback_url` → returns nil |
+| `TestIsVerificationToken_ADKToken` | `auth/verify_token_test.go` | JWT without `challenge_id` → returns nil |
 | `TestVerifyVerificationToken` | `auth/verify_token_test.go` | Valid signature → returns claims |
 | `TestVerifyVerificationToken_BadSignature` | `auth/verify_token_test.go` | Wrong key → error |
 | `TestVerifyVerificationToken_Expired` | `auth/verify_token_test.go` | Expired token → error |
@@ -664,7 +692,7 @@ func validateCallbackURL(raw string, requireHTTPS bool) error {
 | `TestHandler_PhoneMismatch` | `verification/handler_test.go` | Sender ≠ claim → mismatch message |
 | `TestHandler_CallbackFails` | `verification/handler_test.go` | Callback returns 500 → error message |
 | `TestHandler_ExpiredToken` | `verification/handler_test.go` | Expired JWT → expired message |
-| `TestTokenWithAudience` | `auth/jwt_test.go` | Dynamic audience in callback JWT |
+| `TestTokenWithAudienceAndChallenge` | `auth/jwt_test.go` | Dynamic audience + challenge_id in callback JWT |
 
 ### 8.2 Integration Test
 
@@ -677,7 +705,7 @@ Create `test/integration/verification_test.go`:
 5. Assert:
    - Mock server received the callback POST
    - Callback had valid `Authorization: Bearer <jwt>` header
-   - Callback JWT contains correct `user_id`, `channel`, `iss`, `aud`
+   - Callback JWT contains correct `user_id`, `channel`, `challenge_id`, `iss`, `aud`
    - Handler returned success message
 
 ### 8.3 Manual E2E Test
@@ -699,25 +727,15 @@ Create `test/integration/verification_test.go`:
 
 | Concern | Mitigation |
 |---------|------------|
-| **Token replay** | JWT `exp` enforced (default 5 min TTL); backend marks challenge as consumed |
-| **Phone spoofing** | WhatsApp provides sender identity via E2E; `mobile` claim must match sender |
-| **Callback URL injection** | Validate URL format; optionally restrict to allowlisted domains per app |
+| **Token replay** | JWT `exp` enforced (default 5 min TTL); backend marks challenge as consumed; `challenge_id` bound in gateway JWT prevents cross-challenge replay |
+| **Phone spoofing** | WhatsApp provides sender identity via E2E; `mobile` claim must match sender (E.164 exact comparison) |
+| **SSRF / Callback URL injection** | Callback URL derived from **static per-app config**, not from JWT claims. No runtime URL injection possible |
+| **Confused deputy** | Gateway JWT includes `challenge_id` — backend must verify it matches the pending challenge |
 | **Key compromise** | Each app has its own public key; compromising one doesn't affect others |
-| **Man-in-the-middle** | Callback URL must be HTTPS in production |
+| **Man-in-the-middle** | Callback URL must be HTTPS in production; redirects disallowed |
 | **Denial of service** | Rate-limit verification attempts per sender (e.g. 5/minute) |
 
 ### 9.2 Recommended
-
-- **Callback URL allowlist:** Optionally configure allowed callback URL patterns per app:
-  ```yaml
-  apps:
-    orez-laundry-app:
-      public_key_path: "secrets/apps/orez-laundry-app/public.pem"
-      allowed_callback_hosts:
-        - "api.orezlaundry.com"
-        - "staging-api.orezlaundry.com"
-  ```
-  Reject callbacks to any other host.
 
 - **Rate limiting:** Track verification attempts per sender phone number. Reject after threshold:
   ```go
@@ -786,6 +804,7 @@ Create `test/integration/verification_test.go`:
      apps:
        orez-laundry-app:
          public_key_path: "secrets/apps/orez-laundry-app/public.pem"
+         callback_base_url: "https://api.orezlaundry.com/api/v1/auth/whatsapp"
    ```
 
 5. **Update app backend `.env`:**
