@@ -18,6 +18,14 @@ auth:
     # issuer: "whatsadk-gateway"
     # audience: "adk-agent"
     # ttl: "2m"
+  oauth:
+    enabled: false
+    # key_path: "secrets/oauth_ed25519.pem"
+    # spa_url: "https://chat.myadk.app"
+    # issuer: "whatsadk-gateway"
+    # audience: "adk-cloud-proxy"
+    # ttl: "24h"
+    # rate_limit: 5  # max AUTH requests per phone per hour
 
 verification:
   enabled: false

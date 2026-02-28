@@ -37,7 +37,18 @@ type VerificationMessages struct {
 }
 
 type AuthConfig struct {
-	JWT JWTConfig `yaml:"jwt"`
+	JWT   JWTConfig   `yaml:"jwt"`
+	OAuth OAuthConfig `yaml:"oauth"`
+}
+
+type OAuthConfig struct {
+	Enabled   bool   `yaml:"enabled"`
+	KeyPath   string `yaml:"key_path"`
+	SPAURL    string `yaml:"spa_url"`
+	Issuer    string `yaml:"issuer"`
+	Audience  string `yaml:"audience"`
+	TTL       string `yaml:"ttl"`
+	RateLimit int    `yaml:"rate_limit"`
 }
 
 type JWTConfig struct {
@@ -156,6 +167,15 @@ func (c *Config) applyDefaults() {
 	if c.Verification.CallbackTimeout == "" {
 		c.Verification.CallbackTimeout = "10s"
 	}
+	if c.Auth.OAuth.Issuer == "" {
+		c.Auth.OAuth.Issuer = "whatsadk-gateway"
+	}
+	if c.Auth.OAuth.TTL == "" {
+		c.Auth.OAuth.TTL = "24h"
+	}
+	if c.Auth.OAuth.RateLimit == 0 {
+		c.Auth.OAuth.RateLimit = 5
+	}
 }
 
 func (c *Config) IsUserWhitelisted(userID string) bool {
@@ -191,5 +211,14 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if v := os.Getenv("WHATSAPP_STORE_DSN"); v != "" {
 		c.WhatsApp.StoreDSN = v
+	}
+	if v := os.Getenv("OAUTH_ENABLED"); v == "true" {
+		c.Auth.OAuth.Enabled = true
+	}
+	if v := os.Getenv("OAUTH_KEY_PATH"); v != "" {
+		c.Auth.OAuth.KeyPath = v
+	}
+	if v := os.Getenv("OAUTH_SPA_URL"); v != "" {
+		c.Auth.OAuth.SPAURL = v
 	}
 }

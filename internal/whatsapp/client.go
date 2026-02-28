@@ -30,11 +30,12 @@ type Client struct {
 	wac           *whatsmeow.Client
 	adkClient     *agent.Client
 	verifyHandler *verification.Handler
+	oauthHandler  *auth.OAuthHandler
 	cfg           *config.Config
 	log           waLog.Logger
 }
 
-func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client, verifyHandler *verification.Handler) (*Client, error) {
+func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client, verifyHandler *verification.Handler, oauthHandler *auth.OAuthHandler) (*Client, error) {
 	log := waLog.Stdout("WhatsApp", cfg.WhatsApp.LogLevel, true)
 
 	container, err := sqlstore.New(ctx, "postgres", cfg.WhatsApp.StoreDSN, log)
@@ -53,6 +54,7 @@ func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client, verif
 		wac:           wac,
 		adkClient:     adkClient,
 		verifyHandler: verifyHandler,
+		oauthHandler:  oauthHandler,
 		cfg:           cfg,
 		log:           log,
 	}
@@ -159,6 +161,24 @@ func (c *Client) handleMessage(msg *events.Message) {
 			}
 			return
 		}
+	}
+
+	if c.oauthHandler != nil && auth.IsAuthCommand(text) {
+		ctx := context.Background()
+		response, err := c.oauthHandler.Handle(userID, text)
+		if err != nil {
+			c.log.Errorf("OAuth handler error: %v", err)
+			response = "⚠️ Something went wrong processing your AUTH request. Please try again."
+		}
+		if response != "" {
+			_, err := c.wac.SendMessage(ctx, msg.Info.Chat, &waE2E.Message{
+				Conversation: proto.String(response),
+			})
+			if err != nil {
+				c.log.Errorf("Failed to send OAuth response: %v", err)
+			}
+		}
+		return
 	}
 
 	if !c.isUserAllowed(userID) {

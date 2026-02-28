@@ -25,7 +25,9 @@ The gateway is a single long-running process that connects to WhatsApp via the w
 
 ```
 whatsadk/
-├── cmd/gateway/main.go              # Application entry point & dependency wiring
+├── cmd/
+│   ├── gateway/main.go              # Application entry point & dependency wiring
+│   └── keygen/main.go               # Ed25519 key pair generator for OAuth
 ├── internal/
 │   ├── config/config.go             # YAML configuration loader with env overrides
 │   ├── whatsapp/client.go           # WhatsApp client, QR auth, message routing
@@ -33,6 +35,9 @@ whatsadk/
 │   ├── auth/
 │   │   ├── claims.go                # JWT custom claims struct (user_id, channel)
 │   │   ├── jwt.go                   # RS256 JWT token generator
+│   │   ├── eddsa.go                 # Ed25519 key loading (PEM/seed)
+│   │   ├── oauth_token.go           # EdDSA JWT generator for OAuth flow
+│   │   ├── oauth_handler.go         # AUTH command parser, rate limiter, deep link builder
 │   │   ├── key_registry.go          # Public key registry for app verification
 │   │   └── verify_token.go          # Verification token detection & validation
 │   └── verification/
@@ -50,8 +55,9 @@ The `main.go` file orchestrates startup:
 1. Loads configuration via `config.Load()`
 2. Optionally initializes `auth.JWTGenerator` (RS256 signing)
 3. Optionally initializes `verification.Handler` (reverse OTP)
-4. Creates `agent.Client` (ADK HTTP client)
-5. Creates `whatsapp.Client`, connects, and enters the run loop
+4. Optionally initializes `auth.OAuthHandler` (EdDSA WhatsApp OAuth)
+5. Creates `agent.Client` (ADK HTTP client)
+6. Creates `whatsapp.Client`, connects, and enters the run loop
 
 All dependencies are wired manually — no DI framework is used.
 
@@ -79,8 +85,9 @@ Wraps the [whatsmeow](https://github.com/tulir/whatsmeow) library to provide:
   1. Ignores messages from self and group chats
   2. Extracts text from conversation or extended text messages
   3. Checks for verification tokens → delegates to `verification.Handler`
-  4. Applies access control (whitelist + India country code filter)
-  5. Forwards to `agent.Client.Chat()` and sends the response back
+  4. Checks for AUTH commands → delegates to `auth.OAuthHandler` (if enabled)
+  5. Applies access control (whitelist + India country code filter)
+  6. Forwards to `agent.Client.Chat()` and sends the response back
 - **Graceful shutdown** — listens for `SIGINT`/`SIGTERM`
 
 ### `internal/agent` — ADK Client
@@ -109,6 +116,16 @@ Supports both default audience (`Token()`) and per-audience tokens (`TokenWithAu
 #### Key Registry (`key_registry.go`)
 
 Loads RSA public keys for registered third-party apps from PEM files. Used by the verification subsystem to validate incoming verification tokens.
+
+#### OAuth (EdDSA) Authentication (`eddsa.go`, `oauth_token.go`, `oauth_handler.go`)
+
+Provides WhatsApp-based OAuth login using Ed25519/EdDSA-signed JWTs:
+
+- `LoadEdDSAKey()` — loads an Ed25519 private key from PEM (PKCS#8) or raw 32-byte seed
+- `OAuthTokenGenerator` — creates EdDSA JWTs with `sub` (phone), `iss`, `aud`, `nonce`, and `pubkey` claims
+- `OAuthHandler` — parses `AUTH <pubkey> <nonce>` WhatsApp messages, validates the public key, enforces per-phone rate limits (default 5/hour), and returns a deep link containing the signed JWT
+
+The resulting JWT is ~350 characters — compact enough for WhatsApp URL delivery.
 
 #### Verification Token Detection (`verify_token.go`)
 
@@ -140,6 +157,8 @@ whatsapp.Client.handleMessage()
     ├─ Skip: from self, group chat, empty text
     │
     ├─ Check: Is it a verification token? → verification.Handler
+    │
+    ├─ Check: Is it an AUTH command? → auth.OAuthHandler (EdDSA JWT → deep link)
     │
     ├─ Check: Is user allowed? (whitelist / +91 prefix)
     │
@@ -178,13 +197,37 @@ whatsapp.Client → SendMessage() back to user
     │                                  │ ◀── Confirmation msg ────┤
 ```
 
+### WhatsApp OAuth Flow
+
+```
+SPA (Browser)                  WhatsApp User             Gateway                    ADK Server
+    │                               │                       │                          │
+    ├─ Generate Ed25519 key pair    │                       │                          │
+    ├─ Generate nonce               │                       │                          │
+    ├─ Open wa.me deep link ──────▶ │                       │                          │
+    │  AUTH <pubkey> <nonce>         │                       │                          │
+    │                               ├─ Send message ──────▶ │                          │
+    │                               │                       ├─ Parse AUTH command       │
+    │                               │                       ├─ Validate pubkey (32B)    │
+    │                               │                       ├─ Check rate limit         │
+    │                               │                       ├─ Sign EdDSA JWT           │
+    │                               │ ◀── Deep link reply ──┤                          │
+    │                               │  <SPA>/auth#token=JWT │                          │
+    │ ◀── User clicks link ─────── │                       │                          │
+    ├─ Parse JWT + nonce from #     │                       │                          │
+    ├─ Store JWT                    │                       │                          │
+    ├─ Authorization: Bearer JWT ──────────────────────────────────────────────────────▶│
+    │                               │                       │                          ├─ Verify EdDSA sig
+    │ ◀────────────────────────────────────────────────────────────────── API response ─┤
+```
+
 ## Key Dependencies
 
 | Dependency | Purpose |
 |---|---|
 | [whatsmeow](https://github.com/tulir/whatsmeow) | WhatsApp Web multi-device API (WebSocket) |
 | [lib/pq](https://github.com/lib/pq) | PostgreSQL driver for WhatsApp session persistence |
-| [golang-jwt/jwt/v5](https://github.com/golang-jwt/jwt) | RS256 JWT token generation and parsing |
+| [golang-jwt/jwt/v5](https://github.com/golang-jwt/jwt) | RS256 & EdDSA JWT token generation and parsing |
 | [qrterminal](https://github.com/mdp/qrterminal) | QR code rendering in terminal |
 | [yaml.v3](https://pkg.go.dev/gopkg.in/yaml.v3) | YAML configuration parsing |
 | [protobuf](https://pkg.go.dev/google.golang.org/protobuf) | WhatsApp message protocol buffer serialization |
@@ -192,6 +235,7 @@ whatsapp.Client → SendMessage() back to user
 ## Security Model
 
 - **JWT Auth (RS256)** — asymmetric signing ensures the ADK service can verify requests without sharing the private key. Tokens are short-lived (default 2 minutes).
+- **OAuth (EdDSA)** — Ed25519-signed JWTs (~350 chars) for WhatsApp deep-link delivery. The JWT binds the user's phone number to the SPA's ephemeral public key. Rate-limited to 5 AUTH requests per phone per hour.
 - **API Key fallback** — when JWT is not configured, a static API key can be used (less secure, suitable for development).
 - **Verification token validation** — incoming tokens are cryptographically verified against pre-registered app public keys. Phone number matching prevents token forwarding attacks.
 - **Access control** — users are filtered by whitelist or India country code prefix. Non-allowed users receive a rejection message.

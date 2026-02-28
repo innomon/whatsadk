@@ -87,13 +87,32 @@ func main() {
 		fmt.Printf("🔑 Verification enabled (%d app(s) registered)\n", len(cfg.Verification.Apps))
 	}
 
+	var oauthHandler *auth.OAuthHandler
+	if cfg.Auth.OAuth.Enabled {
+		ttl, err := time.ParseDuration(cfg.Auth.OAuth.TTL)
+		if err != nil {
+			log.Fatalf("Invalid OAuth TTL %q: %v", cfg.Auth.OAuth.TTL, err)
+		}
+		tokenGen, err := auth.NewOAuthTokenGenerator(
+			cfg.Auth.OAuth.KeyPath,
+			cfg.Auth.OAuth.Issuer,
+			cfg.Auth.OAuth.Audience,
+			ttl,
+		)
+		if err != nil {
+			log.Fatalf("Failed to initialize OAuth token generator: %v", err)
+		}
+		oauthHandler = auth.NewOAuthHandler(tokenGen, cfg.Auth.OAuth.SPAURL, cfg.Auth.OAuth.RateLimit)
+		fmt.Println("🔑 WhatsApp OAuth enabled (EdDSA)")
+	}
+
 	fmt.Println("🚀 Starting WhatsApp-ADK Gateway...")
 	fmt.Printf("📡 Connecting to ADK service: %s\n", cfg.ADK.Endpoint)
 	fmt.Printf("🤖 Agent: %s\n", cfg.ADK.AppName)
 
 	adkClient := agent.NewClient(&cfg.ADK, jwtGen)
 
-	client, err := whatsapp.New(ctx, cfg, adkClient, verifyHandler)
+	client, err := whatsapp.New(ctx, cfg, adkClient, verifyHandler, oauthHandler)
 	if err != nil {
 		log.Fatalf("Failed to create WhatsApp client: %v", err)
 	}
