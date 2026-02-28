@@ -10,6 +10,7 @@ A Go utility that connects WhatsApp via QR code and proxies messages to a remote
 - Support for both `/run` (single response) and `/run_sse` (streaming) endpoints
 - Per-user session management on the ADK service
 - JWT authentication with RS256 (asymmetric) signing — includes `user_id` and `channel` custom claims
+- **WhatsApp OAuth** — Ed25519/EdDSA-based login flow; SPA users authenticate by sending an AUTH message via WhatsApp deep link and receive a signed JWT for ADK API access
 - **Reverse OTP verification** — apps send a JWT token to the user's WhatsApp; the gateway verifies the sender's phone matches the token's claim and posts a signed callback to confirm identity
 - Configurable via YAML file or environment variables
 
@@ -35,6 +36,9 @@ go build -o whatsadk ./cmd/gateway
 | `ADK_APP_NAME` | No | Agent application name |
 | `ADK_API_KEY` | No | API key for authenticated endpoints |
 | `AUTH_JWT_PRIVATE_KEY_PATH` | No | Path to RSA private key PEM file for JWT auth |
+| `OAUTH_ENABLED` | No | Enable WhatsApp OAuth login (`true`) |
+| `OAUTH_KEY_PATH` | No | Path to Ed25519 private key PEM file for OAuth |
+| `OAUTH_SPA_URL` | No | SPA base URL for OAuth redirect (e.g., `https://chat.myadk.app`) |
 | `VERIFICATION_ENABLED` | No | Enable reverse OTP verification (`true`) |
 | `VERIFICATION_CALLBACK_TIMEOUT` | No | Timeout for verification callback HTTP requests (default: `10s`) |
 | `WHATSAPP_STORE_DSN` | No | PostgreSQL connection string for WhatsApp session storage |
@@ -178,6 +182,41 @@ The gateway supports RS256 (asymmetric) JWT authentication for requests to the A
 When `private_key_path` is not set, JWT auth is disabled and the gateway falls back to static API key authentication (if configured).
 
 For the ADK Go server-side verification implementation, see [docs/adk-jwt-auth-server.md](docs/adk-jwt-auth-server.md).
+
+## WhatsApp OAuth (EdDSA)
+
+The gateway can act as an Identity Provider, allowing SPA users to authenticate via WhatsApp. The flow uses Ed25519/EdDSA-signed JWTs for compact tokens (~350 chars) suitable for delivery via WhatsApp deep links.
+
+**How it works:**
+1. SPA generates an Ed25519 key pair and a nonce, then opens a `wa.me` deep link: `AUTH <pubkey> <nonce>`
+2. User sends the message to the gateway's WhatsApp number
+3. Gateway signs a JWT with the user's phone number and sends back a login link
+4. SPA receives the JWT via URL fragment and uses it for ADK API calls
+
+### Setup
+
+1. Generate an Ed25519 key pair:
+   ```bash
+   go run ./cmd/keygen -out secrets/oauth_ed25519.pem
+   ```
+
+2. Configure in `config.yaml`:
+   ```yaml
+   auth:
+     oauth:
+       enabled: true
+       key_path: "secrets/oauth_ed25519.pem"
+       spa_url: "https://chat.myadk.app"
+       issuer: "whatsadk-gateway"
+       audience: "adk-cloud-proxy"
+       ttl: "24h"
+       rate_limit: 5
+   ```
+
+3. Share the Ed25519 **public key** (printed by `keygen`) with the ADK server for JWT verification.
+
+For the full specification, see [docs/whatsapp-auth-specification.md](docs/whatsapp-auth-specification.md).
+For the implementation plan, see [docs/whatsapp-auth-implementation_plan.md](docs/whatsapp-auth-implementation_plan.md).
 
 ## Reverse OTP Verification
 
