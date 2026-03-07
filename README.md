@@ -39,7 +39,7 @@ make build
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `ADK_ENDPOINT` | No | ADK service URL (default: `http://localhost:8000`) |
+| `ADK_ENDPOINT` | No | ADK service URL (default: `http://localhost:8000/api`) |
 | `ADK_APP_NAME` | No | Agent application name |
 | `ADK_API_KEY` | No | API key for authenticated endpoints |
 | `AUTH_JWT_PRIVATE_KEY_PATH` | No | Path to RSA private key PEM file for JWT auth |
@@ -272,14 +272,14 @@ verification:
 
 Each app must register its RSA public key and callback base URL. The backend callback must return `{"otp":"..."}` in the 200 response body.
 
-**Blacklisted numbers** are stored in PostgreSQL. The `blacklisted_numbers` table is auto-created on first run. Numbers are in E.164 digits format (e.g. `910987654321`). Manage entries directly via `psql`:
+**Blacklisted numbers** are stored in PostgreSQL and apply **globally** across the gateway (both for Reverse OTP and standard ADK agent chatting). The `blacklisted_numbers` table is auto-created on first run. You can block users by their phone number (e.g., `910987654321`) or their WhatsApp LID (e.g., `13061129773287`). Manage entries directly via `psql`:
 
 ```bash
-# Add a blacklisted number
-psql "$VERIFICATION_DATABASE_URL" -c "INSERT INTO blacklisted_numbers (phone, reason) VALUES ('910987654321', 'spam') ON CONFLICT DO NOTHING;"
+# Add a blacklisted number or LID
+psql "$VERIFICATION_DATABASE_URL" -c "INSERT INTO blacklisted_numbers (phone, reason) VALUES ('13061129773287', 'spam') ON CONFLICT DO NOTHING;"
 
 # Remove a blacklisted number
-psql "$VERIFICATION_DATABASE_URL" -c "DELETE FROM blacklisted_numbers WHERE phone = '910987654321';"
+psql "$VERIFICATION_DATABASE_URL" -c "DELETE FROM blacklisted_numbers WHERE phone = '13061129773287';"
 
 # List all blacklisted numbers
 psql "$VERIFICATION_DATABASE_URL" -c "SELECT * FROM blacklisted_numbers;"
@@ -290,14 +290,14 @@ psql "$VERIFICATION_DATABASE_URL" -c "SELECT * FROM blacklisted_numbers;"
 ### Local Development Server
 ```yaml
 adk:
-  endpoint: "http://localhost:8000"
+  endpoint: "http://localhost:8000/api"
   app_name: "my_agent"
 ```
 
 ### ADK Studio / Cloud Run
 ```yaml
 adk:
-  endpoint: "https://your-adk-instance.run.app"
+  endpoint: "https://your-adk-instance.run.app/api"
   app_name: "production_agent"
   # api_key: set via ADK_API_KEY for authenticated endpoints
 ```
@@ -323,7 +323,10 @@ For a detailed architecture overview, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 - Only private (non-group) messages are processed
 - Messages from self are ignored
-- User access control: whitelisted users are always allowed; non-whitelisted users must have an Indian phone number (+91), otherwise they receive a rejection message
+- **Access Control:**
+  - By default (if `whitelisted_users` is empty), **everyone** is allowed to message the gateway.
+  - If `whitelisted_users` is configured, only those specific numbers/LIDs are allowed, with an automatic fallback that allows any Indian phone number (`+91` prefix) or unknown LID.
+- **Global Blacklist:** Users added to the PostgreSQL blacklist are blocked from all interactions.
 - Each WhatsApp user gets their own session on the ADK service
 - Session history is managed by the ADK service
 

@@ -12,6 +12,7 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/store/sqlstore"
+	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
@@ -21,6 +22,7 @@ import (
 	"github.com/innomon/whatsadk/internal/agent"
 	"github.com/innomon/whatsadk/internal/auth"
 	"github.com/innomon/whatsadk/internal/config"
+	"github.com/innomon/whatsadk/internal/store"
 	"github.com/innomon/whatsadk/internal/verification"
 )
 
@@ -31,11 +33,12 @@ type Client struct {
 	adkClient     *agent.Client
 	verifyHandler *verification.Handler
 	oauthHandler  *auth.OAuthHandler
+	store         *store.Store
 	cfg           *config.Config
 	log           waLog.Logger
 }
 
-func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client, verifyHandler *verification.Handler, oauthHandler *auth.OAuthHandler) (*Client, error) {
+func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client, verifyHandler *verification.Handler, oauthHandler *auth.OAuthHandler, store *store.Store) (*Client, error) {
 	log := waLog.Stdout("WhatsApp", cfg.WhatsApp.LogLevel, true)
 
 	container, err := sqlstore.New(ctx, "postgres", cfg.WhatsApp.StoreDSN, log)
@@ -55,6 +58,7 @@ func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client, verif
 		adkClient:     adkClient,
 		verifyHandler: verifyHandler,
 		oauthHandler:  oauthHandler,
+		store:         store,
 		cfg:           cfg,
 		log:           log,
 	}
@@ -146,8 +150,46 @@ func (c *Client) handleMessage(msg *events.Message) {
 		return
 	}
 
+	// Prefer phone number for internal logic/blocking
 	userID := msg.Info.Sender.User
-	c.log.Infof("Received message from %s: %s", userID, truncate(text, 80))
+	displayID := msg.Info.Sender.String()
+
+	// Try to resolve LID to phone number for better logging/visibility
+	if msg.Info.Sender.Server == "lid" {
+		ctx := context.Background()
+		// 1. Check local store first
+		contact, err := c.wac.Store.Contacts.GetContact(ctx, msg.Info.Sender)
+		if err == nil && contact.Found {
+			// Found in local cache
+		} else {
+			// 2. Not in cache, try fetching from WhatsApp servers (one-time discovery)
+			info, err := c.wac.GetUserInfo(ctx, []types.JID{msg.Info.Sender})
+			if err == nil {
+				if ui, ok := info[msg.Info.Sender]; ok {
+					isBusiness := ui.VerifiedName != nil
+					c.log.Infof("Discovered info for LID %s: Status: %q, Picture: %q, Business: %v, Phone: %s", 
+						msg.Info.Sender.User, ui.Status, ui.PictureID, isBusiness, ui.Devices)
+				}
+			}
+		}
+	}
+
+	c.log.Infof("Received message from %s: %s", displayID, truncate(text, 80))
+
+	// Global Blacklist Check
+	if c.store != nil {
+		ctx := context.Background()
+		// Check both raw ID and full JID string
+		blocked, _ := c.store.IsBlacklisted(ctx, userID)
+		if !blocked {
+			blocked, _ = c.store.IsBlacklisted(ctx, displayID)
+		}
+
+		if blocked {
+			c.log.Warnf("Blocking message from blacklisted user: %s", displayID)
+			return
+		}
+	}
 
 	if c.verifyHandler != nil && auth.IsVerificationToken(text) != nil {
 		ctx := context.Background()
@@ -181,8 +223,8 @@ func (c *Client) handleMessage(msg *events.Message) {
 		return
 	}
 
-	if !c.isUserAllowed(userID) {
-		c.log.Infof("Blocked message from non-allowed user %s", userID)
+	if !c.isUserAllowed(msg.Info.Sender) {
+		c.log.Infof("Blocked message from non-allowed user %s", msg.Info.Sender.String())
 		ctx := context.Background()
 		_, err := c.wac.SendMessage(ctx, msg.Info.Chat, &waE2E.Message{
 			Conversation: proto.String("Sorry, we only entertain friends from India."),
@@ -214,11 +256,31 @@ func (c *Client) handleMessage(msg *events.Message) {
 	}
 }
 
-func (c *Client) isUserAllowed(userID string) bool {
-	if c.cfg.IsUserWhitelisted(userID) {
+func (c *Client) isUserAllowed(jid types.JID) bool {
+	// 1. If whitelisting is active, check it
+	if len(c.cfg.WhatsApp.WhitelistedUsers) > 0 {
+		if c.cfg.IsUserWhitelisted(jid.User) || c.cfg.IsUserWhitelisted(jid.String()) {
+			return true
+		}
+	} else {
+		// 2. If NO whitelisting is active, we allow everyone except if we want to enforce 91 prefix
+		// Since user asked for "anyone should be able to send message", 
+		// we bypass the 91 check if WhitelistedUsers is empty.
 		return true
 	}
-	return strings.HasPrefix(userID, indiaCountryCode)
+
+	// 3. Fallback to country check if whitelist exists but user is not in it
+	if jid.Server == "s.whatsapp.net" && strings.HasPrefix(jid.User, indiaCountryCode) {
+		return true
+	}
+
+	// 4. Handle LID (LinkedIn ID) 
+	if jid.Server == "lid" {
+		c.log.Infof("LID detected: %s. Allowing LID for whitelisted/indian-only mode.", jid.String())
+		return true
+	}
+
+	return false
 }
 
 func extractText(msg *events.Message) string {

@@ -71,7 +71,7 @@ Loads a `config.yaml` file with a well-defined search order:
 4. `./config/config.yaml`
 5. Executable directory (`config.yaml` or `config/config.yaml`)
 
-After loading YAML, applies sensible defaults and overrides from environment variables (`ADK_ENDPOINT`, `ADK_APP_NAME`, `ADK_API_KEY`, etc.).
+After loading YAML, applies sensible defaults and overrides from environment variables (`ADK_ENDPOINT`, `ADK_APP_NAME`, `ADK_API_KEY`, etc.). The default endpoint is `http://localhost:8000/api`.
 
 **Key config structs:** `Config`, `WhatsAppConfig`, `ADKConfig`, `AuthConfig`, `VerificationConfig`
 
@@ -84,10 +84,11 @@ Wraps the [whatsmeow](https://github.com/tulir/whatsmeow) library to provide:
 - **Message event handling** — routes incoming messages through a pipeline:
   1. Ignores messages from self and group chats
   2. Extracts text from conversation or extended text messages
-  3. Checks for verification tokens → delegates to `verification.Handler`
-  4. Checks for AUTH commands → delegates to `auth.OAuthHandler` (if enabled)
-  5. Applies access control (whitelist + India country code filter)
-  6. Forwards to `agent.Client.Chat()` and sends the response back
+  3. Checks global blacklist and drops blocked users
+  4. Checks for verification tokens → delegates to `verification.Handler`
+  5. Checks for AUTH commands → delegates to `auth.OAuthHandler` (if enabled)
+  6. Applies access control (allows all by default, or filters by whitelist/India/LID if whitelist is active)
+  7. Forwards to `agent.Client.Chat()` and sends the response back
 - **Graceful shutdown** — listens for `SIGINT`/`SIGTERM`
 
 ### `internal/agent` — ADK Client
@@ -156,11 +157,13 @@ whatsapp.Client.handleMessage()
     │
     ├─ Skip: from self, group chat, empty text
     │
+    ├─ Check: Is user blacklisted? (PostgreSQL)
+    │
     ├─ Check: Is it a verification token? → verification.Handler
     │
     ├─ Check: Is it an AUTH command? → auth.OAuthHandler (EdDSA JWT → deep link)
     │
-    ├─ Check: Is user allowed? (whitelist / +91 prefix)
+    ├─ Check: Is user allowed? (whitelist / allow-all fallback)
     │
     ▼
 agent.Client.Chat()
@@ -238,7 +241,8 @@ SPA (Browser)                  WhatsApp User             Gateway                
 - **OAuth (EdDSA)** — Ed25519-signed JWTs (~350 chars) for WhatsApp deep-link delivery. The JWT binds the user's phone number to the SPA's ephemeral public key. Rate-limited to 5 AUTH requests per phone per hour.
 - **API Key fallback** — when JWT is not configured, a static API key can be used (less secure, suitable for development).
 - **Verification token validation** — incoming tokens are cryptographically verified against pre-registered app public keys. Phone number matching prevents token forwarding attacks.
-- **Access control** — users are filtered by whitelist or India country code prefix. Non-allowed users receive a rejection message.
+- **Global Blacklist** — users can be globally blocked across the gateway via PostgreSQL.
+- **Access control** — allows all users by default. If a whitelist is provided, only whitelisted users, unknown LIDs, or Indian (+91) numbers are allowed. Non-allowed users receive a rejection message.
 
 ## Build & Test
 

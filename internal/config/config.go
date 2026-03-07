@@ -141,7 +141,7 @@ func (c *Config) applyDefaults() {
 		c.WhatsApp.LogLevel = "INFO"
 	}
 	if c.ADK.Endpoint == "" {
-		c.ADK.Endpoint = "http://localhost:8000"
+		c.ADK.Endpoint = "http://localhost:8000/api"
 	}
 	if c.ADK.AppName == "" {
 		c.ADK.AppName = "my_agent"

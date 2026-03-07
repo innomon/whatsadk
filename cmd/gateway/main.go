@@ -54,40 +54,49 @@ func main() {
 		fmt.Println("🔐 JWT authentication enabled (RS256)")
 	}
 
+	var gwStore *store.Store
 	var verifyHandler *verification.Handler
 	if cfg.Verification.Enabled {
-		keyRegistry, err := auth.NewKeyRegistry(cfg.Verification.Apps)
-		if err != nil {
-			log.Fatalf("Failed to load verification app keys: %v", err)
-		}
-		if jwtGen == nil {
-			log.Fatalf("Verification requires JWT auth to be enabled (private_key_path must be set)")
-		}
+	        keyRegistry, err := auth.NewKeyRegistry(cfg.Verification.Apps)
+	        if err != nil {
+	                log.Fatalf("Failed to load verification app keys: %v", err)
+	        }
+	        if jwtGen == nil {
+	                log.Fatalf("Verification requires JWT auth to be enabled (private_key_path must be set)")
+	        }
 
-		gwStore, err := store.Open(cfg.Verification.DatabaseURL)
-		if err != nil {
-			log.Fatalf("Failed to open gateway store: %v", err)
-		}
-		defer gwStore.Close()
+	        gwStore, err = store.Open(cfg.Verification.DatabaseURL)
+	        if err != nil {
+	                log.Fatalf("Failed to open gateway store: %v", err)
+	        }
+	        defer gwStore.Close()
 
-		timeout, _ := time.ParseDuration(cfg.Verification.CallbackTimeout)
-		if timeout == 0 {
-			timeout = 10 * time.Second
-		}
+	        timeout, _ := time.ParseDuration(cfg.Verification.CallbackTimeout)
+	        if timeout == 0 {
+	                timeout = 10 * time.Second
+	        }
 
-		logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-		verifyHandler = verification.NewHandler(
-			keyRegistry,
-			jwtGen,
-			gwStore,
-			cfg.Verification,
-			&http.Client{Timeout: timeout},
-			logger,
-		)
-		fmt.Printf("🔑 Verification enabled (%d app(s) registered)\n", len(cfg.Verification.Apps))
+	        logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	        verifyHandler = verification.NewHandler(
+	                keyRegistry,
+	                jwtGen,
+	                gwStore,
+	                cfg.Verification,
+	                &http.Client{Timeout: timeout},
+	                logger,
+	        )
+	        fmt.Printf("🔑 Verification enabled (%d app(s) registered)\n", len(cfg.Verification.Apps))
+	} else {
+	        // Initialize store for global blacklist even if verification is disabled
+	        gwStore, err = store.Open(cfg.Verification.DatabaseURL)
+	        if err != nil {
+	                log.Fatalf("Failed to open gateway store: %v", err)
+	        }
+	        defer gwStore.Close()
 	}
 
 	var oauthHandler *auth.OAuthHandler
+
 	if cfg.Auth.OAuth.Enabled {
 		ttl, err := time.ParseDuration(cfg.Auth.OAuth.TTL)
 		if err != nil {
@@ -112,7 +121,8 @@ func main() {
 
 	adkClient := agent.NewClient(&cfg.ADK, jwtGen)
 
-	client, err := whatsapp.New(ctx, cfg, adkClient, verifyHandler, oauthHandler)
+	client, err := whatsapp.New(ctx, cfg, adkClient, verifyHandler, oauthHandler, gwStore)
+
 	if err != nil {
 		log.Fatalf("Failed to create WhatsApp client: %v", err)
 	}

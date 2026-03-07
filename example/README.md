@@ -10,6 +10,15 @@ This example demonstrates a deterministic ADK agent integrated with the WhatsApp
 
 ## Prerequisites
 - A running PostgreSQL instance for WhatsApp session storage.
+  - **Quick Start with Docker (Persistent Data in `sandbox/`):**
+    ```bash
+    mkdir -p sandbox/db
+    docker run --name whatsadk-db \
+      -e POSTGRES_DB=whatsadk \
+      -e POSTGRES_PASSWORD=whatsadk \
+      -v "$(pwd)/sandbox/db:/var/lib/postgresql/data" \
+      -p 5433:5432 -d postgres
+    ```
 - Go 1.23+ installed.
 
 ## Setup Instructions
