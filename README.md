@@ -22,8 +22,15 @@ A Go utility that connects WhatsApp via QR code and proxies messages to a remote
 
 ## Installation
 
+The project uses a `Makefile` to manage builds. All binaries are generated in the `bin/` directory.
+
 ```bash
-go build -o whatsadk ./cmd/gateway
+# Build all binaries (gateway and keygen)
+make build
+
+# The binaries will be available in:
+# bin/gateway
+# bin/keygen
 ```
 
 ## Configuration
@@ -96,13 +103,13 @@ go run agent.go web api
 
 ```bash
 # With default config (localhost:8000)
-./whatsadk
+./bin/gateway
 
 # With custom endpoint
-ADK_ENDPOINT=https://my-adk-service.example.com ./whatsadk
+ADK_ENDPOINT=https://my-adk-service.example.com ./bin/gateway
 
 # With custom config file
-./whatsadk -config /path/to/config.yaml
+./bin/gateway -config /path/to/config.yaml
 ```
 
 ### 3. Link WhatsApp (First Run)

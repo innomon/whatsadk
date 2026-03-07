@@ -1,0 +1,18 @@
+# Configuration for WhatsApp-ADK Gateway Example
+
+whatsapp:
+  # Connection string for WhatsApp session storage
+  store_dsn: "postgres://localhost:5432/whatsadk?sslmode=disable"
+  log_level: "INFO"
+  
+adk:
+  # The endpoint of the ADK agent API server (started by example/main.go)
+  endpoint: "http://localhost:8000"
+  # The name of the agent defined in example/main.go
+  app_name: "HelloWorkAgent"
+  streaming: false
+
+# Auth is optional for local development unless testing JWT
+# auth:
+#   jwt:
+#     private_key_path: "secrets/jwt_private.pem"
