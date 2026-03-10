@@ -40,3 +40,6 @@ sandbox/
 
 # OS files
 .DS_Store
+
+# Firebase MCP crap
+firebase-debug.log

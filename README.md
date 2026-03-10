@@ -325,8 +325,8 @@ For a detailed architecture overview, see [ARCHITECTURE.md](ARCHITECTURE.md).
 - Messages from self are ignored
 - **Access Control:**
   - By default (if `whitelisted_users` is empty), **everyone** is allowed to message the gateway.
-  - If `whitelisted_users` is configured, only those specific numbers/LIDs are allowed, with an automatic fallback that allows any Indian phone number (`+91` prefix) or unknown LID.
-- **Global Blacklist:** Users added to the PostgreSQL blacklist are blocked from all interactions.
+  - If `whitelisted_users` is configured, only those specific numbers/LIDs are allowed. The gateway **automatically attempts to resolve LIDs to phone numbers** for better whitelist and country (+91 prefix) matching.
+- **Global Blacklist:** Users added to the PostgreSQL blacklist are blocked from all interactions. Resolution of LIDs to phone numbers also applies here, ensuring that blocking a phone number also blocks its associated LID.
 - Each WhatsApp user gets their own session on the ADK service
 - Session history is managed by the ADK service
 

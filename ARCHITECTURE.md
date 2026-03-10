@@ -87,8 +87,9 @@ Wraps the [whatsmeow](https://github.com/tulir/whatsmeow) library to provide:
   3. Checks global blacklist and drops blocked users
   4. Checks for verification tokens → delegates to `verification.Handler`
   5. Checks for AUTH commands → delegates to `auth.OAuthHandler` (if enabled)
-  6. Applies access control (allows all by default, or filters by whitelist/India/LID if whitelist is active)
-  7. Forwards to `agent.Client.Chat()` and sends the response back
+  6. **LID Resolution** — if the sender has a Linked Identity (LID), automatically attempts to resolve it to a phone number (PN) using the local cache or a server lookup.
+  7. Applies access control (allows all by default, or filters by whitelist/India/PN if whitelist is active)
+  8. Forwards to `agent.Client.Chat()` and sends the response back
 - **Graceful shutdown** — listens for `SIGINT`/`SIGTERM`
 
 ### `internal/agent` — ADK Client
@@ -158,6 +159,8 @@ whatsapp.Client.handleMessage()
     ├─ Skip: from self, group chat, empty text
     │
     ├─ Check: Is user blacklisted? (PostgreSQL)
+    │
+    ├─ Resolve: If LID, attempt resolution to PN (Cache/Lookup)
     │
     ├─ Check: Is it a verification token? → verification.Handler
     │
@@ -241,8 +244,8 @@ SPA (Browser)                  WhatsApp User             Gateway                
 - **OAuth (EdDSA)** — Ed25519-signed JWTs (~350 chars) for WhatsApp deep-link delivery. The JWT binds the user's phone number to the SPA's ephemeral public key. Rate-limited to 5 AUTH requests per phone per hour.
 - **API Key fallback** — when JWT is not configured, a static API key can be used (less secure, suitable for development).
 - **Verification token validation** — incoming tokens are cryptographically verified against pre-registered app public keys. Phone number matching prevents token forwarding attacks.
-- **Global Blacklist** — users can be globally blocked across the gateway via PostgreSQL.
-- **Access control** — allows all users by default. If a whitelist is provided, only whitelisted users, unknown LIDs, or Indian (+91) numbers are allowed. Non-allowed users receive a rejection message.
+- **Global Blacklist** — users can be globally blocked across the gateway via PostgreSQL. Blocking applies to both phone numbers and their associated LIDs.
+- **Access control** — allows all users by default. If a whitelist is provided, only whitelisted users or Indian (+91) numbers are allowed. LIDs are automatically resolved to phone numbers to ensure they match whitelist/country rules. Non-allowed users receive a rejection message.
 
 ## Build & Test
 

@@ -150,29 +150,20 @@ func (c *Client) handleMessage(msg *events.Message) {
 		return
 	}
 
-	// Prefer phone number for internal logic/blocking
-	userID := msg.Info.Sender.User
-	displayID := msg.Info.Sender.String()
-
-	// Try to resolve LID to phone number for better logging/visibility
-	if msg.Info.Sender.Server == "lid" {
+	// Handle LID resolution to phone number (PN)
+	sender := msg.Info.Sender
+	if sender.Server == types.HiddenUserServer {
 		ctx := context.Background()
-		// 1. Check local store first
-		contact, err := c.wac.Store.Contacts.GetContact(ctx, msg.Info.Sender)
-		if err == nil && contact.Found {
-			// Found in local cache
-		} else {
-			// 2. Not in cache, try fetching from WhatsApp servers (one-time discovery)
-			info, err := c.wac.GetUserInfo(ctx, []types.JID{msg.Info.Sender})
-			if err == nil {
-				if ui, ok := info[msg.Info.Sender]; ok {
-					isBusiness := ui.VerifiedName != nil
-					c.log.Infof("Discovered info for LID %s: Status: %q, Picture: %q, Business: %v, Phone: %s", 
-						msg.Info.Sender.User, ui.Status, ui.PictureID, isBusiness, ui.Devices)
-				}
-			}
+		resolved := c.resolveLID(ctx, sender)
+		if resolved.Server == types.DefaultUserServer {
+			c.log.Infof("Resolved LID %s to PN %s", sender.String(), resolved.String())
+			sender = resolved
 		}
 	}
+
+	// Prefer phone number for internal logic/blocking
+	userID := sender.User
+	displayID := sender.String()
 
 	c.log.Infof("Received message from %s: %s", displayID, truncate(text, 80))
 
@@ -257,6 +248,15 @@ func (c *Client) handleMessage(msg *events.Message) {
 }
 
 func (c *Client) isUserAllowed(jid types.JID) bool {
+	// If it's a LID, try resolving it to PN first for better whitelist/country checking
+	if jid.Server == types.HiddenUserServer {
+		ctx := context.Background()
+		resolved := c.resolveLID(ctx, jid)
+		if resolved.Server == types.DefaultUserServer {
+			jid = resolved
+		}
+	}
+
 	// 1. If whitelisting is active, check it
 	if len(c.cfg.WhatsApp.WhitelistedUsers) > 0 {
 		if c.cfg.IsUserWhitelisted(jid.User) || c.cfg.IsUserWhitelisted(jid.String()) {
@@ -264,19 +264,17 @@ func (c *Client) isUserAllowed(jid types.JID) bool {
 		}
 	} else {
 		// 2. If NO whitelisting is active, we allow everyone except if we want to enforce 91 prefix
-		// Since user asked for "anyone should be able to send message", 
-		// we bypass the 91 check if WhitelistedUsers is empty.
 		return true
 	}
 
 	// 3. Fallback to country check if whitelist exists but user is not in it
-	if jid.Server == "s.whatsapp.net" && strings.HasPrefix(jid.User, indiaCountryCode) {
+	if jid.Server == types.DefaultUserServer && strings.HasPrefix(jid.User, indiaCountryCode) {
 		return true
 	}
 
-	// 4. Handle LID (LinkedIn ID) 
-	if jid.Server == "lid" {
-		c.log.Infof("LID detected: %s. Allowing LID for whitelisted/indian-only mode.", jid.String())
+	// 4. Handle LID (Linked ID) if still not resolved
+	if jid.Server == types.HiddenUserServer {
+		c.log.Infof("LID detected and unresolved: %s. Allowing LID for whitelisted mode.", jid.String())
 		return true
 	}
 
@@ -304,4 +302,34 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+func (c *Client) resolveLID(ctx context.Context, lid types.JID) types.JID {
+	if lid.Server != types.HiddenUserServer {
+		return lid
+	}
+
+	// 1. Check local store first (LIDStore is direct for PN/LID mapping)
+	if c.wac.Store.LIDs != nil {
+		pn, err := c.wac.Store.LIDs.GetPNForLID(ctx, lid)
+		if err == nil && !pn.IsEmpty() {
+			return pn
+		}
+	}
+
+	// 2. Not in store, try fetching from WhatsApp servers (one-time discovery)
+	info, err := c.wac.GetUserInfo(ctx, []types.JID{lid})
+	if err != nil {
+		c.log.Warnf("Failed to get user info for LID %s: %v", lid, err)
+		return lid
+	}
+
+	if ui, ok := info[lid]; ok && !ui.LID.IsEmpty() {
+		// When querying with a LID, the LID field in UserInfo typically contains the PN
+		if ui.LID.Server == types.DefaultUserServer {
+			return ui.LID
+		}
+	}
+
+	return lid
 }
