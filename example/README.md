@@ -16,7 +16,7 @@ This example demonstrates a deterministic ADK agent integrated with the WhatsApp
     docker run --name whatsadk-db \
       -e POSTGRES_DB=whatsadk \
       -e POSTGRES_PASSWORD=whatsadk \
-      -v "$(pwd)/sandbox/db:/var/lib/postgresql/data" \
+      -v "$(pwd)/sandbox/db:/var/lib/postgresql" \
       -p 5433:5432 -d postgres
     ```
 - Go 1.23+ installed.
