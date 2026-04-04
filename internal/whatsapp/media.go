@@ -9,7 +9,9 @@ import (
 	_ "image/gif"
 	"image/jpeg"
 	_ "image/png"
+	_ "golang.org/x/image/webp"
 	"net/http"
+
 	"os"
 	"os/exec"
 	"path/filepath"
