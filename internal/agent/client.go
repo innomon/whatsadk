@@ -38,7 +38,13 @@ type Message struct {
 }
 
 type Part struct {
-	Text string `json:"text,omitempty"`
+	Text       string      `json:"text,omitempty"`
+	InlineData *InlineData `json:"inlineData,omitempty"`
+}
+
+type InlineData struct {
+	MimeType string `json:"mimeType"`
+	Data     string `json:"data"` // base64
 }
 
 type SessionRequest struct {
@@ -101,26 +107,28 @@ func (c *Client) EnsureSession(ctx context.Context, userID string) error {
 }
 
 func (c *Client) Chat(ctx context.Context, userID, message string) (string, error) {
+	return c.ChatParts(ctx, userID, []Part{{Text: message}})
+}
+
+func (c *Client) ChatParts(ctx context.Context, userID string, parts []Part) (string, error) {
 	if err := c.EnsureSession(ctx, userID); err != nil {
 		return "", err
 	}
 
 	if c.streaming {
-		return c.chatSSE(ctx, userID, message)
+		return c.chatSSE(ctx, userID, parts)
 	}
-	return c.chatRun(ctx, userID, message)
+	return c.chatRun(ctx, userID, parts)
 }
 
-func (c *Client) chatRun(ctx context.Context, userID, message string) (string, error) {
+func (c *Client) chatRun(ctx context.Context, userID string, parts []Part) (string, error) {
 	runReq := RunRequest{
 		AppName:   c.appName,
 		UserID:    userID,
 		SessionID: userID,
 		NewMessage: &Message{
-			Role: "user",
-			Parts: []Part{
-				{Text: message},
-			},
+			Role:  "user",
+			Parts: parts,
 		},
 	}
 
@@ -159,16 +167,14 @@ func (c *Client) chatRun(ctx context.Context, userID, message string) (string, e
 	return extractFinalResponse(events), nil
 }
 
-func (c *Client) chatSSE(ctx context.Context, userID, message string) (string, error) {
+func (c *Client) chatSSE(ctx context.Context, userID string, parts []Part) (string, error) {
 	runReq := RunRequest{
 		AppName:   c.appName,
 		UserID:    userID,
 		SessionID: userID,
 		NewMessage: &Message{
-			Role: "user",
-			Parts: []Part{
-				{Text: message},
-			},
+			Role:  "user",
+			Parts: parts,
 		},
 		Streaming: true,
 	}

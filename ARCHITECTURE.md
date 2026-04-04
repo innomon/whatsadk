@@ -30,7 +30,9 @@ whatsadk/
 │   └── keygen/main.go               # Ed25519 key pair generator for OAuth
 ├── internal/
 │   ├── config/config.go             # YAML configuration loader with env overrides
-│   ├── whatsapp/client.go           # WhatsApp client, QR auth, message routing
+│   ├── whatsapp/
+│   │   ├── client.go                # WhatsApp client, QR auth, message routing
+│   │   └── media.go                 # Media Bridge processor (ffmpeg, resizing)
 │   ├── agent/client.go              # ADK HTTP client (REST & SSE modes)
 │   ├── auth/
 │   │   ├── claims.go                # JWT custom claims struct (user_id, channel)
@@ -75,12 +77,17 @@ After loading YAML, applies sensible defaults and overrides from environment var
 
 **Key config structs:** `Config`, `WhatsAppConfig`, `ADKConfig`, `AuthConfig`, `VerificationConfig`
 
-### `internal/whatsapp` — WhatsApp Client
+### `internal/whatsapp` — WhatsApp Client & Media Bridge
 
-Wraps the [whatsmeow](https://github.com/tulir/whatsmeow) library to provide:
+Wraps the [whatsmeow](https://github.com/tulir/whatsmeow) library and provides media transformation:
 
 - **QR code authentication** — displays QR in terminal on first run
 - **Persistent sessions** — stored in PostgreSQL via `sqlstore`
+- **Media Bridge (`media.go`)** — Normalizes incoming media for the ADK agent:
+    - **Images:** JPEG normalization and resizing to 896px.
+    - **Audio:** Transcoding OGG/Opus to 16kHz Mono WAV.
+    - **Video:** Sampling at 1 FPS (max 20 frames) to JPEG.
+    - **Documents:** Passing through PDF, TXT, and CSV.
 - **Message event handling** — routes incoming messages through a pipeline:
   1. Ignores messages from self and group chats
   2. Extracts text from conversation or extended text messages
@@ -168,8 +175,10 @@ whatsapp.Client.handleMessage()
     │
     ├─ Check: Is user allowed? (whitelist / allow-all fallback)
     │
+    ├─ Media Bridge: Process and normalize media/documents
+    │
     ▼
-agent.Client.Chat()
+agent.Client.ChatParts()
     │
     ├─ EnsureSession() → POST /apps/{app}/users/{user}/sessions/{session}
     │

@@ -35,6 +35,7 @@ type Client struct {
 	verifyHandler *verification.Handler
 	oauthHandler  *auth.OAuthHandler
 	store         *store.Store
+	mediaProc     *Processor
 	cfg           *config.Config
 	log           waLog.Logger
 }
@@ -60,6 +61,7 @@ func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client, verif
 		verifyHandler: verifyHandler,
 		oauthHandler:  oauthHandler,
 		store:         store,
+		mediaProc:     NewProcessor(),
 		cfg:           cfg,
 		log:           log,
 	}
@@ -200,7 +202,7 @@ func (c *Client) handleHistorySync(v *events.HistorySync) {
 				if text != "" {
 					c.storeRequest(ctx, userID, msg.Info.ID, []byte(text), msg.Info.Timestamp, "text/plain")
 				}
-				c.downloadAndStoreMedia(ctx, userID, msg.Info.ID, msg)
+				c.processAndStoreMedia(ctx, userID, msg.Info.ID, msg)
 			}
 		}
 	}
@@ -261,8 +263,8 @@ func (c *Client) handleMessage(msg *events.Message) {
 		c.storeRequest(ctx, userID, uniqueID, []byte(text), msg.Info.Timestamp, "text/plain")
 	}
 
-	// Store attachments if any
-	c.downloadAndStoreMedia(ctx, userID, uniqueID, msg)
+	// Process media and documents
+	mediaParts := c.processAndStoreMedia(ctx, userID, uniqueID, msg)
 
 	if c.verifyHandler != nil && auth.IsVerificationToken(text) != nil {
 		response := c.verifyHandler.Handle(ctx, userID, text)
@@ -317,11 +319,18 @@ func (c *Client) handleMessage(msg *events.Message) {
 		return
 	}
 
-	if text == "" {
+	// Construct parts for ADK
+	var parts []agent.Part
+	if text != "" {
+		parts = append(parts, agent.Part{Text: text})
+	}
+	parts = append(parts, mediaParts...)
+
+	if len(parts) == 0 {
 		return
 	}
 
-	response, err := c.adkClient.Chat(ctx, userID, text)
+	response, err := c.adkClient.ChatParts(ctx, userID, parts)
 	var errStr string
 	if err != nil {
 		c.log.Errorf("Failed to get agent response: %v", err)
@@ -345,9 +354,9 @@ func (c *Client) handleMessage(msg *events.Message) {
 	}
 }
 
-func (c *Client) downloadAndStoreMedia(ctx context.Context, userID, uniqueID string, msg *events.Message) {
+func (c *Client) processAndStoreMedia(ctx context.Context, userID, uniqueID string, msg *events.Message) []agent.Part {
 	if msg.Message == nil {
-		return
+		return nil
 	}
 
 	var data []byte
@@ -357,13 +366,13 @@ func (c *Client) downloadAndStoreMedia(ctx context.Context, userID, uniqueID str
 	// Handle different media types
 	if msg.Message.ImageMessage != nil {
 		data, err = c.wac.Download(ctx, msg.Message.ImageMessage)
-		mimeType = msg.Message.ImageMessage.GetMimetype()
+		mimeType = "image/jpeg" // Normalized
 	} else if msg.Message.AudioMessage != nil {
 		data, err = c.wac.Download(ctx, msg.Message.AudioMessage)
-		mimeType = msg.Message.AudioMessage.GetMimetype()
+		mimeType = "audio/wav" // Normalized
 	} else if msg.Message.VideoMessage != nil {
 		data, err = c.wac.Download(ctx, msg.Message.VideoMessage)
-		mimeType = msg.Message.VideoMessage.GetMimetype()
+		mimeType = "video/mp4"
 	} else if msg.Message.DocumentMessage != nil {
 		data, err = c.wac.Download(ctx, msg.Message.DocumentMessage)
 		mimeType = msg.Message.DocumentMessage.GetMimetype()
@@ -374,12 +383,48 @@ func (c *Client) downloadAndStoreMedia(ctx context.Context, userID, uniqueID str
 
 	if err != nil {
 		c.log.Errorf("Failed to download media for %s: %v", uniqueID, err)
-		return
+		return nil
 	}
 
-	if data != nil {
-		c.storeRequest(ctx, userID, uniqueID, data, msg.Info.Timestamp, mimeType)
+	if data == nil {
+		return nil
 	}
+
+	// Store raw media
+	c.storeRequest(ctx, userID, uniqueID, data, msg.Info.Timestamp, mimeType)
+
+	// Process media for ADK
+	if c.mediaProc == nil {
+		return nil
+	}
+
+	pCtx, cancel := context.WithTimeout(ctx, ProcessTimeout)
+	defer cancel()
+
+	var parts []agent.Part
+	if msg.Message.ImageMessage != nil {
+		part, err := c.mediaProc.ProcessImage(pCtx, data)
+		if err == nil {
+			parts = append(parts, *part)
+		}
+	} else if msg.Message.AudioMessage != nil {
+		part, err := c.mediaProc.ProcessAudio(pCtx, data)
+		if err == nil {
+			parts = append(parts, *part)
+		}
+	} else if msg.Message.VideoMessage != nil {
+		vParts, err := c.mediaProc.ProcessVideo(pCtx, data)
+		if err == nil {
+			parts = append(parts, vParts...)
+		}
+	} else if msg.Message.DocumentMessage != nil {
+		part, err := c.mediaProc.ProcessDocument(pCtx, data, mimeType)
+		if err == nil {
+			parts = append(parts, *part)
+		}
+	}
+
+	return parts
 }
 
 func (c *Client) isUserAllowed(jid types.JID) bool {
