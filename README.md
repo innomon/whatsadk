@@ -407,6 +407,54 @@ Add to your `~/.config/open-code/mcp.json`:
 }
 ```
 
+## Simulator & Testing
+
+WhatsADK includes a built-in WhatsApp message simulator for testing ADK agent workflows without needing a physical device. It features a Terminal User Interface (TUI), support for attachments, and a slash command system.
+
+### Features
+- **TUI Interface**: Interactive chat-like interface in your terminal.
+- **Attachments**: Simulate sending images, audio, video, and documents.
+- **Session Export/Import**: Save a simulation session to JSON and replay it later.
+- **Real Session Export**: Export actual WhatsApp conversations from the gateway's database for debugging.
+- **Slash Commands**: Control the simulator directly from the message input.
+
+### Installation
+
+```bash
+# Build the simulator binary
+go build -o bin/simulator ./cmd/simulator
+```
+
+### Usage
+
+#### 1. Start the TUI Simulator
+
+The simulator uses your existing `config.yaml` to connect to the ADK service.
+
+```bash
+./bin/simulator
+```
+
+#### 2. Slash Commands (inside TUI)
+
+| Command | Description |
+|---------|-------------|
+| `/help` | List all available commands |
+| `/set_sender <phone>` | Change the simulated sender's phone number |
+| `/attach <path> [caption]` | Simulate sending a file with an optional caption |
+| `/export <filename.json>` | Save the current simulation history to a file |
+| `/replay <filename.json>` | Load and replay a previously saved session |
+
+#### 3. Export a Real WhatsApp Session
+
+To debug a specific agent failure using a real conversation log:
+
+```bash
+./bin/simulator export <phone_number> <output_file.json>
+```
+
+The exported JSON can then be loaded into the simulator using `/replay` to reproduce and fix agentic workflow issues.
+
 ## Architecture
 
 For a detailed architecture overview, see [ARCHITECTURE.md](ARCHITECTURE.md).
