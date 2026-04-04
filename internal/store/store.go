@@ -107,9 +107,9 @@ func (s *Store) RemoveBlacklist(ctx context.Context, phone string) error {
 }
 
 type BlacklistedNumber struct {
-	Phone     string
-	Reason    string
-	CreatedAt time.Time
+	Phone     string    `json:"phone"`
+	Reason    string    `json:"reason"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func (s *Store) ListBlacklist(ctx context.Context) ([]BlacklistedNumber, error) {
@@ -130,4 +130,91 @@ func (s *Store) ListBlacklist(ctx context.Context) ([]BlacklistedNumber, error) 
 		numbers = append(numbers, n)
 	}
 	return numbers, rows.Err()
+}
+
+type Contact struct {
+	OurJID       string `json:"our_jid"`
+	TheirJID     string `json:"their_jid"`
+	FullName     string `json:"full_name"`
+	ShortName    string `json:"short_name"`
+	PushName     string `json:"push_name"`
+	BusinessName string `json:"business_name"`
+}
+
+func (s *Store) ListContacts(ctx context.Context, query string) ([]Contact, error) {
+	var rows *sql.Rows
+	var err error
+
+	if query == "" {
+		rows, err = s.db.QueryContext(ctx,
+			"SELECT our_jid, their_jid, full_name, short_name, push_name, business_name FROM whatsmeow_contacts ORDER BY full_name ASC LIMIT 100",
+		)
+	} else {
+		q := "%" + query + "%"
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT our_jid, their_jid, full_name, short_name, push_name, business_name 
+			 FROM whatsmeow_contacts 
+			 WHERE full_name ILIKE $1 OR push_name ILIKE $1 OR their_jid ILIKE $1 
+			 ORDER BY full_name ASC LIMIT 100`,
+			q,
+		)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("list contacts: %w", err)
+	}
+	defer rows.Close()
+
+	var contacts []Contact
+	for rows.Next() {
+		var c Contact
+		var fullName, shortName, pushName, businessName sql.NullString
+		err := rows.Scan(&c.OurJID, &c.TheirJID, &fullName, &shortName, &pushName, &businessName)
+		if err != nil {
+			return nil, fmt.Errorf("scan contact row: %w", err)
+		}
+		c.FullName = fullName.String
+		c.ShortName = shortName.String
+		c.PushName = pushName.String
+		c.BusinessName = businessName.String
+		contacts = append(contacts, c)
+	}
+	return contacts, rows.Err()
+}
+
+type FileEntry struct {
+	Path      string          `json:"path"`
+	Metadata  sql.NullString  `json:"metadata"`
+	Content   []byte          `json:"content,omitempty"`
+	Timestamp time.Time       `json:"timestamp"`
+}
+
+func (s *Store) GetFilesysLogs(ctx context.Context, phone string, limit int) ([]FileEntry, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+
+	pathPattern := "whatsmeow/" + phone + "/%"
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT path, metadata, content, tmstamp 
+		 FROM filesys 
+		 WHERE path LIKE $1 
+		 ORDER BY tmstamp DESC 
+		 LIMIT $2`,
+		pathPattern, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get filesys logs: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []FileEntry
+	for rows.Next() {
+		var e FileEntry
+		if err := rows.Scan(&e.Path, &e.Metadata, &e.Content, &e.Timestamp); err != nil {
+			return nil, fmt.Errorf("scan filesys row: %w", err)
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
 }

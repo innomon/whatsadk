@@ -3,6 +3,7 @@
 # Binary names
 BINARY_GATEWAY=gateway
 BINARY_KEYGEN=keygen
+BINARY_MCP=whatsadk-mcp
 
 # Directories
 BIN_DIR=bin
@@ -21,6 +22,11 @@ build:
 	@mkdir -p $(BIN_DIR)
 	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_GATEWAY) ./$(CMD_DIR)/gateway
 	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_KEYGEN) ./$(CMD_DIR)/keygen
+	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_MCP) ./$(CMD_DIR)/mcp
+
+build-mcp:
+	@mkdir -p $(BIN_DIR)
+	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_MCP) ./$(CMD_DIR)/mcp
 
 clean:
 	$(GOCLEAN)

@@ -345,6 +345,68 @@ If the database is running in a Docker container (e.g., `whatsadk-db`), you can 
 docker exec -i whatsadk-db psql -U postgres -d <database_name> -c "SELECT * FROM whatsmeow_contacts;" > contacts.txt
 ```
 
+## Model Context Protocol (MCP)
+
+WhatsADK includes an MCP server that allows AI agents (like Claude Code, Cursor, and OpenCode) to interact with your WhatsApp contacts and blacklist directly.
+
+### Tools Available:
+- `blacklist_add`: Block a phone number/JID.
+- `blacklist_remove`: Unblock a phone number/JID.
+- `query_contacts`: Search for WhatsApp contacts by name or JID.
+- `get_message_logs`: Retrieve recent message logs for a specific user.
+
+### Configuration for Claude Code / Claude Desktop:
+
+Add the following to your `claude_desktop_config.json` or equivalent:
+
+```json
+{
+  "mcpServers": {
+    "whatsadk": {
+      "command": "/path/to/whatsadk/bin/whatsadk-mcp",
+      "env": {
+        "CONFIG_FILE": "/path/to/whatsadk/config/config.yaml"
+      }
+    }
+  }
+}
+```
+
+### Configuration for pi.dev (Pi Coding Agent):
+
+Create or update `.pi/mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "whatsadk": {
+      "command": "/path/to/whatsadk/bin/whatsadk-mcp",
+      "env": {
+        "CONFIG_FILE": "/path/to/whatsadk/config/config.yaml"
+      },
+      "lifecycle": "lazy"
+    }
+  }
+}
+```
+
+### Configuration for openCode:
+
+Add to your `~/.config/open-code/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "whatsadk": {
+      "command": "/path/to/whatsadk/bin/whatsadk-mcp",
+      "env": {
+        "CONFIG_FILE": "/path/to/whatsadk/config/config.yaml"
+      }
+    }
+  }
+}
+```
+
 ## Architecture
 
 For a detailed architecture overview, see [ARCHITECTURE.md](ARCHITECTURE.md).
