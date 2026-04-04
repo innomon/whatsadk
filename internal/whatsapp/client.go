@@ -69,13 +69,16 @@ func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client, verif
 	return client, nil
 }
 
-func (c *Client) storeRequest(ctx context.Context, userID, uniqueID string, content []byte, ts time.Time) {
+func (c *Client) storeRequest(ctx context.Context, userID, uniqueID string, content []byte, ts time.Time, mimeType string) {
 	if c.store == nil {
 		return
 	}
+	if mimeType == "" {
+		mimeType = "text/plain"
+	}
 	path := fmt.Sprintf("whatsmeow/%s/%s/request", userID, uniqueID)
 	metadata := map[string]interface{}{
-		"mime_type": "text/plain",
+		"mime_type": mimeType,
 		"metadata":  map[string]interface{}{},
 	}
 	if err := c.store.PutFile(ctx, path, metadata, content, ts); err != nil {
@@ -186,10 +189,6 @@ func (c *Client) handleHistorySync(v *events.HistorySync) {
 			}
 
 			text := extractText(msg)
-			if text == "" {
-				continue
-			}
-
 			ctx := context.Background()
 			if msg.Info.IsFromMe {
 				// Store as response
@@ -198,7 +197,10 @@ func (c *Client) handleHistorySync(v *events.HistorySync) {
 			} else {
 				// Store as request
 				userID := msg.Info.Sender.User
-				c.storeRequest(ctx, userID, msg.Info.ID, []byte(text), msg.Info.Timestamp)
+				if text != "" {
+					c.storeRequest(ctx, userID, msg.Info.ID, []byte(text), msg.Info.Timestamp, "text/plain")
+				}
+				c.downloadAndStoreMedia(ctx, userID, msg.Info.ID, msg)
 			}
 		}
 	}
@@ -210,9 +212,6 @@ func (c *Client) handleMessage(msg *events.Message) {
 	}
 
 	text := extractText(msg)
-	if text == "" {
-		return
-	}
 
 	// Handle messages sent from me (e.g., from another device)
 	if msg.Info.IsFromMe {
@@ -256,9 +255,14 @@ func (c *Client) handleMessage(msg *events.Message) {
 		}
 	}
 
-	// Store the incoming request
+	// Store the incoming request (text if available)
 	ctx := context.Background()
-	c.storeRequest(ctx, userID, uniqueID, []byte(text), msg.Info.Timestamp)
+	if text != "" {
+		c.storeRequest(ctx, userID, uniqueID, []byte(text), msg.Info.Timestamp, "text/plain")
+	}
+
+	// Store attachments if any
+	c.downloadAndStoreMedia(ctx, userID, uniqueID, msg)
 
 	if c.verifyHandler != nil && auth.IsVerificationToken(text) != nil {
 		response := c.verifyHandler.Handle(ctx, userID, text)
@@ -313,6 +317,10 @@ func (c *Client) handleMessage(msg *events.Message) {
 		return
 	}
 
+	if text == "" {
+		return
+	}
+
 	response, err := c.adkClient.Chat(ctx, userID, text)
 	var errStr string
 	if err != nil {
@@ -334,6 +342,43 @@ func (c *Client) handleMessage(msg *events.Message) {
 	} else {
 		c.log.Infof("Sent response to %s: %s", userID, truncate(response, 50))
 		c.storeResponse(ctx, userID, uniqueID, []byte(response), resp.Timestamp, errStr)
+	}
+}
+
+func (c *Client) downloadAndStoreMedia(ctx context.Context, userID, uniqueID string, msg *events.Message) {
+	if msg.Message == nil {
+		return
+	}
+
+	var data []byte
+	var err error
+	var mimeType string
+
+	// Handle different media types
+	if msg.Message.ImageMessage != nil {
+		data, err = c.wac.Download(ctx, msg.Message.ImageMessage)
+		mimeType = msg.Message.ImageMessage.GetMimetype()
+	} else if msg.Message.AudioMessage != nil {
+		data, err = c.wac.Download(ctx, msg.Message.AudioMessage)
+		mimeType = msg.Message.AudioMessage.GetMimetype()
+	} else if msg.Message.VideoMessage != nil {
+		data, err = c.wac.Download(ctx, msg.Message.VideoMessage)
+		mimeType = msg.Message.VideoMessage.GetMimetype()
+	} else if msg.Message.DocumentMessage != nil {
+		data, err = c.wac.Download(ctx, msg.Message.DocumentMessage)
+		mimeType = msg.Message.DocumentMessage.GetMimetype()
+	} else if msg.Message.StickerMessage != nil {
+		data, err = c.wac.Download(ctx, msg.Message.StickerMessage)
+		mimeType = msg.Message.StickerMessage.GetMimetype()
+	}
+
+	if err != nil {
+		c.log.Errorf("Failed to download media for %s: %v", uniqueID, err)
+		return
+	}
+
+	if data != nil {
+		c.storeRequest(ctx, userID, uniqueID, data, msg.Info.Timestamp, mimeType)
 	}
 }
 
@@ -382,6 +427,17 @@ func extractText(msg *events.Message) string {
 
 	if msg.Message.ExtendedTextMessage != nil && msg.Message.ExtendedTextMessage.Text != nil {
 		return *msg.Message.ExtendedTextMessage.Text
+	}
+
+	// Caption for media messages
+	if msg.Message.ImageMessage != nil && msg.Message.ImageMessage.Caption != nil {
+		return *msg.Message.ImageMessage.Caption
+	}
+	if msg.Message.VideoMessage != nil && msg.Message.VideoMessage.Caption != nil {
+		return *msg.Message.VideoMessage.Caption
+	}
+	if msg.Message.DocumentMessage != nil && msg.Message.DocumentMessage.Caption != nil {
+		return *msg.Message.DocumentMessage.Caption
 	}
 
 	return ""
