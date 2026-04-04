@@ -19,7 +19,10 @@ A Go utility that connects WhatsApp via QR code and proxies messages to a remote
 
 - Go 1.25+
 - PostgreSQL database
-- **FFmpeg** (required for the Media Bridge audio/video processing)
+- **FFmpeg** — Required for the **Media Bridge** to process audio (Opus to WAV) and video (sampling frames). Ensure it is available in your system `PATH`.
+  - **Ubuntu/Debian:** `sudo apt update && sudo apt install ffmpeg`
+  - **macOS:** `brew install ffmpeg`
+  - **Windows:** `choco install ffmpeg` or download from [ffmpeg.org](https://ffmpeg.org/download.html)
 - Running ADK Agent service (local or remote)
 
 ## Installation

@@ -355,42 +355,43 @@ func (c *Client) handleMessage(msg *events.Message) {
 }
 
 func (c *Client) processAndStoreMedia(ctx context.Context, userID, uniqueID string, msg *events.Message) []agent.Part {
-	if msg.Message == nil {
+	m := msg.Message
+	if m == nil {
 		return nil
 	}
 
 	var data []byte
 	var err error
 	var mimeType string
+	var media whatsmeow.DownloadableMessage
 
-	// Handle different media types
-	if msg.Message.ImageMessage != nil {
-		data, err = c.wac.Download(ctx, msg.Message.ImageMessage)
-		mimeType = "image/jpeg" // Normalized
-	} else if msg.Message.AudioMessage != nil {
-		data, err = c.wac.Download(ctx, msg.Message.AudioMessage)
-		mimeType = "audio/wav" // Normalized
-	} else if msg.Message.VideoMessage != nil {
-		data, err = c.wac.Download(ctx, msg.Message.VideoMessage)
-		mimeType = "video/mp4"
-	} else if msg.Message.DocumentMessage != nil {
-		data, err = c.wac.Download(ctx, msg.Message.DocumentMessage)
-		mimeType = msg.Message.DocumentMessage.GetMimetype()
-	} else if msg.Message.StickerMessage != nil {
-		data, err = c.wac.Download(ctx, msg.Message.StickerMessage)
-		mimeType = msg.Message.StickerMessage.GetMimetype()
+	// Step 1: Identify Media and Metadata
+	switch {
+	case m.ImageMessage != nil:
+		media, mimeType = m.ImageMessage, "image/jpeg"
+	case m.AudioMessage != nil:
+		media, mimeType = m.AudioMessage, "audio/wav"
+	case m.VideoMessage != nil:
+		media, mimeType = m.VideoMessage, "video/mp4"
+	case m.DocumentMessage != nil:
+		media, mimeType = m.DocumentMessage, m.DocumentMessage.GetMimetype()
+	case m.StickerMessage != nil:
+		media, mimeType = m.StickerMessage, m.StickerMessage.GetMimetype()
+	default:
+		return nil
 	}
 
+	// Step 2: Download
+	data, err = c.wac.Download(ctx, media)
 	if err != nil {
 		c.log.Errorf("Failed to download media for %s: %v", uniqueID, err)
 		return nil
 	}
-
 	if data == nil {
 		return nil
 	}
 
-	// Store raw media
+	// Step 3: Store raw media
 	c.storeRequest(ctx, userID, uniqueID, data, msg.Info.Timestamp, mimeType)
 
 	// Process media for ADK
@@ -402,24 +403,26 @@ func (c *Client) processAndStoreMedia(ctx context.Context, userID, uniqueID stri
 	defer cancel()
 
 	var parts []agent.Part
-	if msg.Message.ImageMessage != nil {
-		part, err := c.mediaProc.ProcessImage(pCtx, data)
-		if err == nil {
+	// Step 4: Process for ADK (Explicitly excluding Stickers)
+	switch {
+	case m.ImageMessage != nil:
+		part, pErr := c.mediaProc.ProcessImage(pCtx, data)
+		if pErr == nil {
 			parts = append(parts, *part)
 		}
-	} else if msg.Message.AudioMessage != nil {
-		part, err := c.mediaProc.ProcessAudio(pCtx, data)
-		if err == nil {
+	case m.AudioMessage != nil:
+		part, pErr := c.mediaProc.ProcessAudio(pCtx, data)
+		if pErr == nil {
 			parts = append(parts, *part)
 		}
-	} else if msg.Message.VideoMessage != nil {
-		vParts, err := c.mediaProc.ProcessVideo(pCtx, data)
-		if err == nil {
+	case m.VideoMessage != nil:
+		vParts, pErr := c.mediaProc.ProcessVideo(pCtx, data)
+		if pErr == nil {
 			parts = append(parts, vParts...)
 		}
-	} else if msg.Message.DocumentMessage != nil {
-		part, err := c.mediaProc.ProcessDocument(pCtx, data, mimeType)
-		if err == nil {
+	case m.DocumentMessage != nil:
+		part, pErr := c.mediaProc.ProcessDocument(pCtx, data, mimeType)
+		if pErr == nil {
 			parts = append(parts, *part)
 		}
 	}
