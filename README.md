@@ -434,6 +434,7 @@ The simulator uses your existing `config.yaml` to connect to the ADK service.
 ```bash
 ./bin/simulator
 ```
+For simple text messages, enter your text directly into the input area at the bottom of the TUI
 
 #### 2. Slash Commands (inside TUI)
 
