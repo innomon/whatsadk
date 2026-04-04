@@ -272,7 +272,40 @@ verification:
 
 Each app must register its RSA public key and callback base URL. The backend callback must return `{"otp":"..."}` in the 200 response body.
 
-**Blacklisted numbers** are stored in PostgreSQL and apply **globally** across the gateway (both for Reverse OTP and standard ADK agent chatting). The `blacklisted_numbers` table is auto-created on first run. You can block users by their phone number (e.g., `910987654321`) or their WhatsApp LID (e.g., `13061129773287`). Manage entries directly via `psql`:
+## Database Management
+
+The gateway utilizes PostgreSQL for session storage, contact synchronization, and global blacklisting.
+
+### Contact & Message Storage
+
+The `whatsmeow` library automatically manages session and contact data.
+
+| Feature | Handled By | Default Storage Behavior |
+| :--- | :--- | :--- |
+| **Sessions & Keys** | `sqlstore` | Automatically saved to DB. |
+| **Contacts** | App State Sync | Automatically saved to `whatsmeow_contacts`. |
+| **New Messages** | `events.Message` | **Not stored**; handled in-memory by `handleMessage`. |
+| **Old Messages** | `events.HistorySync` | **Not stored**; received in chunks during pairing. |
+
+### Schema: `whatsmeow_contacts`
+
+The `whatsmeow_contacts` table is automatically populated and updated as `whatsmeow` receives sync events from WhatsApp.
+
+```sql
+CREATE TABLE whatsmeow_contacts (
+    our_jid       TEXT, -- The JID of the local user session
+    their_jid     TEXT, -- The JID of the contact
+    full_name     TEXT, -- Contact name from the local address book
+    short_name    TEXT, -- A shortened version of the contact name
+    push_name     TEXT, -- The name the contact set for themselves
+    business_name TEXT, -- Business name (if applicable)
+    PRIMARY KEY (our_jid, their_jid)
+);
+```
+
+### Global Blacklist
+
+Users added to the PostgreSQL blacklist are blocked from all interactions. Manage entries directly via `psql`:
 
 ```bash
 # Add a blacklisted number or LID
@@ -285,29 +318,12 @@ psql "$VERIFICATION_DATABASE_URL" -c "DELETE FROM blacklisted_numbers WHERE phon
 psql "$VERIFICATION_DATABASE_URL" -c "SELECT * FROM blacklisted_numbers;"
 ```
 
-## Connecting to Different ADK Services
+### Manual Contact Export
 
-### Local Development Server
-```yaml
-adk:
-  endpoint: "http://localhost:8000/api"
-  app_name: "my_agent"
-```
+If the database is running in a Docker container (e.g., `whatsadk-db`), you can export the contact list to a text file:
 
-### ADK Studio / Cloud Run
-```yaml
-adk:
-  endpoint: "https://your-adk-instance.run.app/api"
-  app_name: "production_agent"
-  # api_key: set via ADK_API_KEY for authenticated endpoints
-```
-
-### Vertex AI Agent Engine
-```yaml
-adk:
-  endpoint: "https://your-agent-engine-endpoint"
-  app_name: "deployed_agent"
-  # api_key: use service account or OAuth token
+```bash
+docker exec -i whatsadk-db psql -U postgres -d <database_name> -c "SELECT * FROM whatsmeow_contacts;" > contacts.txt
 ```
 
 ## Architecture
@@ -318,17 +334,6 @@ For a detailed architecture overview, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 - [whatsmeow](https://github.com/tulir/whatsmeow) - WhatsApp Web multidevice API
 - [ADK](https://github.com/google/adk-go) - Google Agent Development Kit (remote service)
-
-## Notes
-
-- Only private (non-group) messages are processed
-- Messages from self are ignored
-- **Access Control:**
-  - By default (if `whitelisted_users` is empty), **everyone** is allowed to message the gateway.
-  - If `whitelisted_users` is configured, only those specific numbers/LIDs are allowed. The gateway **automatically attempts to resolve LIDs to phone numbers** for better whitelist and country (+91 prefix) matching.
-- **Global Blacklist:** Users added to the PostgreSQL blacklist are blocked from all interactions. Resolution of LIDs to phone numbers also applies here, ensuring that blocking a phone number also blocks its associated LID.
-- Each WhatsApp user gets their own session on the ADK service
-- Session history is managed by the ADK service
 
 ## License
 
