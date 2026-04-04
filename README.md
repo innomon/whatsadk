@@ -284,8 +284,22 @@ The `whatsmeow` library automatically manages session and contact data.
 | :--- | :--- | :--- |
 | **Sessions & Keys** | `sqlstore` | Automatically saved to DB. |
 | **Contacts** | App State Sync | Automatically saved to `whatsmeow_contacts`. |
-| **New Messages** | `events.Message` | **Not stored**; handled in-memory by `handleMessage`. |
-| **Old Messages** | `events.HistorySync` | **Not stored**; received in chunks during pairing. |
+| **Messages** | `filesys` table | Persistent storage for requests and responses. |
+
+### Schema: `filesys`
+
+The `filesys` table stores both incoming messages (requests) and outgoing responses.
+
+```sql
+CREATE TABLE filesys (
+    path    TEXT PRIMARY KEY,           -- Format: whatsmeow/<phone>/<uniqueID>/<request|response>
+    metadata JSONB,                      -- Mime type and additional metadata (e.g., errors)
+    content  BYTEA,                      -- Message content (text/plain)
+    tmstamp  TIMESTAMPTZ DEFAULT NOW()  -- Message timestamp
+);
+
+CREATE INDEX idx_filesys_metadata ON filesys USING GIN (metadata);
+```
 
 ### Schema: `whatsmeow_contacts`
 

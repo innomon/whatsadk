@@ -45,7 +45,36 @@ func (s *Store) migrate() error {
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		)
 	`)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS filesys (
+			path TEXT PRIMARY KEY,
+			metadata JSONB,
+			content BYTEA,
+			tmstamp TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX IF NOT EXISTS idx_filesys_metadata ON filesys USING GIN (metadata);
+	`)
 	return err
+}
+
+func (s *Store) PutFile(ctx context.Context, path string, metadata interface{}, content []byte, timestamp time.Time) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO filesys (path, metadata, content, tmstamp) 
+		 VALUES ($1, $2, $3, $4) 
+		 ON CONFLICT (path) DO UPDATE SET 
+			metadata = EXCLUDED.metadata, 
+			content = EXCLUDED.content, 
+			tmstamp = EXCLUDED.tmstamp`,
+		path, metadata, content, timestamp,
+	)
+	if err != nil {
+		return fmt.Errorf("put file: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) IsBlacklisted(ctx context.Context, phone string) (bool, error) {

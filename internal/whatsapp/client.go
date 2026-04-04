@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/mdp/qrterminal/v3"
 	"go.mau.fi/whatsmeow"
@@ -68,6 +69,38 @@ func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client, verif
 	return client, nil
 }
 
+func (c *Client) storeRequest(ctx context.Context, userID, uniqueID string, content []byte, ts time.Time) {
+	if c.store == nil {
+		return
+	}
+	path := fmt.Sprintf("whatsmeow/%s/%s/request", userID, uniqueID)
+	metadata := map[string]interface{}{
+		"mime_type": "text/plain",
+		"metadata":  map[string]interface{}{},
+	}
+	if err := c.store.PutFile(ctx, path, metadata, content, ts); err != nil {
+		c.log.Errorf("Failed to store request to filesys: %v", err)
+	}
+}
+
+func (c *Client) storeResponse(ctx context.Context, userID, uniqueID string, content []byte, ts time.Time, errStr string) {
+	if c.store == nil {
+		return
+	}
+	path := fmt.Sprintf("whatsmeow/%s/%s/response", userID, uniqueID)
+	innerMetadata := map[string]interface{}{}
+	if errStr != "" {
+		innerMetadata["error"] = errStr
+	}
+	metadata := map[string]interface{}{
+		"mime_type": "text/plain",
+		"metadata":  innerMetadata,
+	}
+	if err := c.store.PutFile(ctx, path, metadata, content, ts); err != nil {
+		c.log.Errorf("Failed to store response to filesys: %v", err)
+	}
+}
+
 func (c *Client) Connect(ctx context.Context) error {
 	if c.wac.Store.ID == nil {
 		qrChan, err := c.wac.GetQRChannel(ctx)
@@ -127,6 +160,8 @@ func (c *Client) handleEvent(evt interface{}) {
 	switch v := evt.(type) {
 	case *events.Message:
 		c.handleMessage(v)
+	case *events.HistorySync:
+		c.handleHistorySync(v)
 	case *events.Connected:
 		c.log.Infof("Connected to WhatsApp")
 	case *events.Disconnected:
@@ -136,17 +171,55 @@ func (c *Client) handleEvent(evt interface{}) {
 	}
 }
 
-func (c *Client) handleMessage(msg *events.Message) {
-	if msg.Info.IsFromMe {
-		return
-	}
+func (c *Client) handleHistorySync(v *events.HistorySync) {
+	c.log.Infof("Received history sync (type: %s)", v.Data.SyncType)
+	for _, conv := range v.Data.GetConversations() {
+		chatJID, _ := types.ParseJID(conv.GetID())
+		if chatJID.IsEmpty() || chatJID.Server != types.DefaultUserServer {
+			continue
+		}
 
+		for _, historyMsg := range conv.GetMessages() {
+			msg, err := c.wac.ParseWebMessage(chatJID, historyMsg.GetMessage())
+			if err != nil {
+				continue
+			}
+
+			text := extractText(msg)
+			if text == "" {
+				continue
+			}
+
+			ctx := context.Background()
+			if msg.Info.IsFromMe {
+				// Store as response
+				userID := msg.Info.Chat.User
+				c.storeResponse(ctx, userID, msg.Info.ID, []byte(text), msg.Info.Timestamp, "")
+			} else {
+				// Store as request
+				userID := msg.Info.Sender.User
+				c.storeRequest(ctx, userID, msg.Info.ID, []byte(text), msg.Info.Timestamp)
+			}
+		}
+	}
+}
+
+func (c *Client) handleMessage(msg *events.Message) {
 	if msg.Info.IsGroup {
 		return
 	}
 
 	text := extractText(msg)
 	if text == "" {
+		return
+	}
+
+	// Handle messages sent from me (e.g., from another device)
+	if msg.Info.IsFromMe {
+		userID := msg.Info.Chat.User
+		uniqueID := msg.Info.ID
+		ctx := context.Background()
+		c.storeResponse(ctx, userID, uniqueID, []byte(text), msg.Info.Timestamp, "")
 		return
 	}
 
@@ -164,6 +237,7 @@ func (c *Client) handleMessage(msg *events.Message) {
 	// Prefer phone number for internal logic/blocking
 	userID := sender.User
 	displayID := sender.String()
+	uniqueID := msg.Info.ID
 
 	c.log.Infof("Received message from %s: %s", displayID, truncate(text, 80))
 
@@ -182,33 +256,43 @@ func (c *Client) handleMessage(msg *events.Message) {
 		}
 	}
 
+	// Store the incoming request
+	ctx := context.Background()
+	c.storeRequest(ctx, userID, uniqueID, []byte(text), msg.Info.Timestamp)
+
 	if c.verifyHandler != nil && auth.IsVerificationToken(text) != nil {
-		ctx := context.Background()
 		response := c.verifyHandler.Handle(ctx, userID, text)
 		if response != "" {
-			_, err := c.wac.SendMessage(ctx, msg.Info.Chat, &waE2E.Message{
+			resp, err := c.wac.SendMessage(ctx, msg.Info.Chat, &waE2E.Message{
 				Conversation: proto.String(response),
 			})
 			if err != nil {
 				c.log.Errorf("Failed to send verification response: %v", err)
+				c.storeResponse(ctx, userID, uniqueID, []byte(response), time.Now(), err.Error())
+			} else {
+				c.storeResponse(ctx, userID, uniqueID, []byte(response), resp.Timestamp, "")
 			}
 			return
 		}
 	}
 
 	if c.oauthHandler != nil && auth.IsAuthCommand(text) {
-		ctx := context.Background()
 		response, err := c.oauthHandler.Handle(userID, text)
+		var errStr string
 		if err != nil {
 			c.log.Errorf("OAuth handler error: %v", err)
 			response = "⚠️ Something went wrong processing your AUTH request. Please try again."
+			errStr = err.Error()
 		}
 		if response != "" {
-			_, err := c.wac.SendMessage(ctx, msg.Info.Chat, &waE2E.Message{
+			resp, err := c.wac.SendMessage(ctx, msg.Info.Chat, &waE2E.Message{
 				Conversation: proto.String(response),
 			})
 			if err != nil {
 				c.log.Errorf("Failed to send OAuth response: %v", err)
+				c.storeResponse(ctx, userID, uniqueID, []byte(response), time.Now(), err.Error())
+			} else {
+				c.storeResponse(ctx, userID, uniqueID, []byte(response), resp.Timestamp, errStr)
 			}
 		}
 		return
@@ -216,34 +300,40 @@ func (c *Client) handleMessage(msg *events.Message) {
 
 	if !c.isUserAllowed(msg.Info.Sender) {
 		c.log.Infof("Blocked message from non-allowed user %s", msg.Info.Sender.String())
-		ctx := context.Background()
-		_, err := c.wac.SendMessage(ctx, msg.Info.Chat, &waE2E.Message{
-			Conversation: proto.String("Sorry, we only entertain friends from India."),
+		response := "Sorry, we only entertain friends from India."
+		resp, err := c.wac.SendMessage(ctx, msg.Info.Chat, &waE2E.Message{
+			Conversation: proto.String(response),
 		})
 		if err != nil {
 			c.log.Errorf("Failed to send rejection message: %v", err)
+			c.storeResponse(ctx, userID, uniqueID, []byte(response), time.Now(), err.Error())
+		} else {
+			c.storeResponse(ctx, userID, uniqueID, []byte(response), resp.Timestamp, "")
 		}
 		return
 	}
 
-	ctx := context.Background()
 	response, err := c.adkClient.Chat(ctx, userID, text)
+	var errStr string
 	if err != nil {
 		c.log.Errorf("Failed to get agent response: %v", err)
 		response = "Sorry, I encountered an error processing your message. Please try again."
+		errStr = err.Error()
 	}
 
 	if response == "" {
 		return
 	}
 
-	_, err = c.wac.SendMessage(ctx, msg.Info.Chat, &waE2E.Message{
+	resp, err := c.wac.SendMessage(ctx, msg.Info.Chat, &waE2E.Message{
 		Conversation: proto.String(response),
 	})
 	if err != nil {
 		c.log.Errorf("Failed to send message: %v", err)
+		c.storeResponse(ctx, userID, uniqueID, []byte(response), time.Now(), err.Error())
 	} else {
 		c.log.Infof("Sent response to %s: %s", userID, truncate(response, 50))
+		c.storeResponse(ctx, userID, uniqueID, []byte(response), resp.Timestamp, errStr)
 	}
 }
 
