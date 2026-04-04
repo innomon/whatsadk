@@ -49,17 +49,26 @@ func main() {
 func helloWorkRun(invCtx agent.InvocationContext) iter.Seq2[*session.Event, error] {
 	return func(yield func(*session.Event, error) bool) {
 		userInput := ""
+		var mediaDetected []string
+
 		if invCtx.UserContent() != nil {
 			for _, part := range invCtx.UserContent().Parts {
 				if part.Text != "" {
 					userInput = strings.ToLower(strings.TrimSpace(part.Text))
-					break
+				}
+				if part.InlineData != nil {
+					mediaDetected = append(mediaDetected, fmt.Sprintf("%s (%d bytes)", part.InlineData.MIMEType, len(part.InlineData.Data)))
 				}
 			}
 		}
 
 		var responseText string
-		if userInput == "hello" || userInput == "hi" {
+		if len(mediaDetected) > 0 {
+			responseText = fmt.Sprintf("🎨 I received the following multimedia parts:\n- %s\n", strings.Join(mediaDetected, "\n- "))
+			if userInput != "" {
+				responseText += fmt.Sprintf("\nAnd the text: '%s'", userInput)
+			}
+		} else if userInput == "hello" || userInput == "hi" {
 			responseText = "Hello! I am the Hello Work Agent. I can help you with the following tasks:\n" +
 				"1. 👋 Greet you (say 'hello')\n" +
 				"2. 📋 List my capabilities\n" +
