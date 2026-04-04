@@ -5,21 +5,34 @@ This document describes the architecture of **WhatsADK**, a Go gateway that brid
 ## High-Level Overview
 
 ```
+                                      ┌──────────────────┐
+                                      │ External Agents  │
+                                      │ (Claude, etc.)   │
+                                      └────────┬─────────┘
+                                               │
+                                               ▼ MCP (stdio)
 ┌──────────────┐          ┌──────────────────────────────┐          ┌───────────────┐
 │  WhatsApp    │◀────────▶│        WhatsADK Gateway      │────────▶│  ADK Agent    │
 │  Users       │  whatsmeow│                              │  HTTP   │  Service      │
 │              │  (WebSocket)│  ┌────────┐  ┌───────────┐ │  REST   │  (Remote)     │
 └──────────────┘          │  │PostgreSQL│  │ JWT Auth  │ │  /SSE   └───────────────┘
                           │  │ Session  │  │ (RS256)   │ │
-                          │  └────────┘  └───────────┘ │
-                          │       ┌──────────────┐      │          ┌───────────────┐
-                          │       │ Verification │──────│─────────▶│  3rd-Party    │
-                          │       │ Handler      │      │ Callback │  Apps         │
-                          │       └──────────────┘      │          └───────────────┘
-                          └──────────────────────────────┘
+                          │  └────┬───┘  └───────────┘ │
+                          │       │      ┌──────────────┐      │          ┌───────────────┐
+                          │       │      │ Verification │──────│─────────▶│  3rd-Party    │
+                          │       │      │ Handler      │      │ Callback │  Apps         │
+                          │       │      └──────────────┘      │          └───────────────┘
+                          └───────┼──────────────────────┘
+                                  │
+                          ┌───────┴────────┐
+                          │  whatsadk-mcp  │
+                          │  (MCP Server)  │
+                          └────────────────┘
 ```
 
 The gateway is a single long-running process that connects to WhatsApp via the whatsmeow library, listens for incoming messages, and proxies them to a remote ADK agent over HTTP. Responses from the agent are relayed back to the WhatsApp user.
+
+The **MCP Server** is a secondary entry point that allows local AI agents to query the gateway's state (contacts, logs, blacklist) directly via the Model Context Protocol.
 
 ## Directory Structure
 
@@ -27,7 +40,8 @@ The gateway is a single long-running process that connects to WhatsApp via the w
 whatsadk/
 ├── cmd/
 │   ├── gateway/main.go              # Application entry point & dependency wiring
-│   └── keygen/main.go               # Ed25519 key pair generator for OAuth
+│   ├── keygen/main.go               # Ed25519 key pair generator for OAuth
+│   └── mcp/main.go                  # MCP Server for agentic tool access
 ├── internal/
 │   ├── config/config.go             # YAML configuration loader with env overrides
 │   ├── whatsapp/
@@ -62,6 +76,18 @@ The `main.go` file orchestrates startup:
 6. Creates `whatsapp.Client`, connects, and enters the run loop
 
 All dependencies are wired manually — no DI framework is used.
+
+### `cmd/mcp` — MCP Server
+
+The `main.go` file implements a Model Context Protocol server:
+
+1. Loads configuration via `config.Load()`
+2. Connects to the shared PostgreSQL database via `internal/store`
+3. Exposes tools for external agents:
+    - `blacklist_add` / `blacklist_remove`: Manage global blocking.
+    - `query_contacts`: Search synchronized WhatsApp contacts.
+    - `get_message_logs`: Inspect the `filesys` table for recent traffic.
+4. Communicates over `stdio` for seamless integration with Claude Code, Cursor, and other local dev tools.
 
 ### `internal/config` — Configuration
 
