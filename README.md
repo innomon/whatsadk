@@ -7,7 +7,7 @@ A Go utility that connects WhatsApp via QR code and proxies messages to a remote
 - Connect to WhatsApp using QR code scanning
 - Persistent WhatsApp session storage (PostgreSQL)
 - Proxy incoming WhatsApp messages to remote ADK Agent
-- **Media Bridge** — Automatically intercept, transform, and forward WhatsApp media (images, audio, video) and documents to the ADK agent as multi-part messages
+- **Two-Way Media Bridge** — Automatically intercept, transform, and forward WhatsApp media (images, audio, video) to the ADK agent. Also supports sending media back from the agent to the WhatsApp user.
 - Support for both `/run` (single response) and `/run_sse` (streaming) endpoints
 - Per-user session management on the ADK service
 - JWT authentication with RS256 (asymmetric) signing — includes `user_id` and `channel` custom claims

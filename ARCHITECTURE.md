@@ -109,11 +109,9 @@ Wraps the [whatsmeow](https://github.com/tulir/whatsmeow) library and provides m
 
 - **QR code authentication** — displays QR in terminal on first run
 - **Persistent sessions** — stored in PostgreSQL via `sqlstore`
-- **Media Bridge (`media.go`)** — Normalizes incoming media for the ADK agent:
-    - **Images:** JPEG normalization and resizing to 896px.
-    - **Audio:** Transcoding OGG/Opus to 16kHz Mono WAV.
-    - **Video:** Sampling at 1 FPS (max 20 frames) to JPEG.
-    - **Documents:** Passing through PDF, TXT, and CSV.
+- **Two-Way Media Bridge (`media.go`)** — Normalizes media between WhatsApp and ADK:
+    - **Inbound (WA ➔ ADK):** Images (JPEG 896px), Audio (16kHz Mono WAV), Video (1 FPS sampling).
+    - **Outbound (ADK ➔ WA):** Uploads media parts from ADK to WhatsApp servers and sends them as native WhatsApp messages (Image, Audio, Video, Document).
 - **Message event handling** — routes incoming messages through a pipeline:
   1. Ignores messages from self and group chats
   2. Extracts text from conversation or extended text messages
@@ -213,10 +211,10 @@ agent.Client.ChatParts()
     ├─ chatSSE()    → POST /run_sse  (if streaming=true)
     │
     ▼
-extractFinalResponse() → last non-partial model event
+extractFinalParts() → all parts (text + inlineData) from model message
     │
     ▼
-whatsapp.Client → SendMessage() back to user
+whatsapp.Client → sendADKParts() back to user
 ```
 
 ### Reverse OTP Verification Flow

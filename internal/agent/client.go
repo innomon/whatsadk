@@ -106,13 +106,13 @@ func (c *Client) EnsureSession(ctx context.Context, userID string) error {
 	return nil
 }
 
-func (c *Client) Chat(ctx context.Context, userID, message string) (string, error) {
+func (c *Client) Chat(ctx context.Context, userID, message string) ([]Part, error) {
 	return c.ChatParts(ctx, userID, []Part{{Text: message}})
 }
 
-func (c *Client) ChatParts(ctx context.Context, userID string, parts []Part) (string, error) {
+func (c *Client) ChatParts(ctx context.Context, userID string, parts []Part) ([]Part, error) {
 	if err := c.EnsureSession(ctx, userID); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if c.streaming {
@@ -121,7 +121,7 @@ func (c *Client) ChatParts(ctx context.Context, userID string, parts []Part) (st
 	return c.chatRun(ctx, userID, parts)
 }
 
-func (c *Client) chatRun(ctx context.Context, userID string, parts []Part) (string, error) {
+func (c *Client) chatRun(ctx context.Context, userID string, parts []Part) ([]Part, error) {
 	runReq := RunRequest{
 		AppName:   c.appName,
 		UserID:    userID,
@@ -134,40 +134,40 @@ func (c *Client) chatRun(ctx context.Context, userID string, parts []Part) (stri
 
 	body, err := json.Marshal(runReq)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	url := fmt.Sprintf("%s/run", c.endpoint)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 	if err := c.addAuthHeader(req, userID); err != nil {
-		return "", fmt.Errorf("failed to set auth header: %w", err)
+		return nil, fmt.Errorf("failed to set auth header: %w", err)
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to send request: %w", err)
+		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("run failed (%d): %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("run failed (%d): %s", resp.StatusCode, string(respBody))
 	}
 
 	var events []Event
 	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
-		return "", fmt.Errorf("failed to decode response: %w", err)
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return extractFinalResponse(events), nil
+	return extractFinalParts(events), nil
 }
 
-func (c *Client) chatSSE(ctx context.Context, userID string, parts []Part) (string, error) {
+func (c *Client) chatSSE(ctx context.Context, userID string, parts []Part) ([]Part, error) {
 	runReq := RunRequest{
 		AppName:   c.appName,
 		UserID:    userID,
@@ -181,30 +181,30 @@ func (c *Client) chatSSE(ctx context.Context, userID string, parts []Part) (stri
 
 	body, err := json.Marshal(runReq)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
 	url := fmt.Sprintf("%s/run_sse", c.endpoint)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return "", fmt.Errorf("failed to create request: %w", err)
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 	if err := c.addAuthHeader(req, userID); err != nil {
-		return "", fmt.Errorf("failed to set auth header: %w", err)
+		return nil, fmt.Errorf("failed to set auth header: %w", err)
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("failed to send request: %w", err)
+		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("run_sse failed (%d): %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("run_sse failed (%d): %s", resp.StatusCode, string(respBody))
 	}
 
 	var events []Event
@@ -229,10 +229,10 @@ func (c *Client) chatSSE(ctx context.Context, userID string, parts []Part) (stri
 	}
 
 	if err := scanner.Err(); err != nil {
-		return "", fmt.Errorf("error reading SSE stream: %w", err)
+		return nil, fmt.Errorf("error reading SSE stream: %w", err)
 	}
 
-	return extractFinalResponse(events), nil
+	return extractFinalParts(events), nil
 }
 
 func (c *Client) addAuthHeader(req *http.Request, userID string) error {
@@ -251,34 +251,23 @@ func (c *Client) addAuthHeader(req *http.Request, userID string) error {
 	return nil
 }
 
-func extractFinalResponse(events []Event) string {
-	var result strings.Builder
-
+func extractFinalParts(events []Event) []Part {
 	for i := len(events) - 1; i >= 0; i-- {
 		event := events[i]
 		if event.Content != nil && event.Content.Role == "model" && !event.Partial {
-			for _, part := range event.Content.Parts {
-				if part.Text != "" {
-					result.WriteString(part.Text)
-				}
-			}
-			if result.Len() > 0 {
-				break
+			if len(event.Content.Parts) > 0 {
+				return event.Content.Parts
 			}
 		}
 	}
 
-	if result.Len() == 0 {
-		for _, event := range events {
-			if event.Content != nil && event.Content.Role == "model" {
-				for _, part := range event.Content.Parts {
-					if part.Text != "" {
-						result.WriteString(part.Text)
-					}
-				}
-			}
+	var allParts []Part
+	for _, event := range events {
+		if event.Content != nil && event.Content.Role == "model" {
+			allParts = append(allParts, event.Content.Parts...)
 		}
 	}
 
-	return result.String()
+	return allParts
 }
+

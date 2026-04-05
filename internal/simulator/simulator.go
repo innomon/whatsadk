@@ -63,12 +63,12 @@ func (s *Simulator) SendText(ctx context.Context, text string) (string, error) {
 
 	respMsg := Message{
 		Role:      "model",
-		Parts:     []agent.Part{{Text: resp}},
+		Parts:     resp,
 		Timestamp: time.Now(),
 	}
 	s.history = append(s.history, respMsg)
 
-	return resp, nil
+	return stringifyParts(resp), nil
 }
 
 func (s *Simulator) SendWithAttachment(ctx context.Context, text string, filePath string) (string, error) {
@@ -133,12 +133,12 @@ func (s *Simulator) SendWithAttachment(ctx context.Context, text string, filePat
 
 	respMsg := Message{
 		Role:      "model",
-		Parts:     []agent.Part{{Text: resp}},
+		Parts:     resp,
 		Timestamp: time.Now(),
 	}
 	s.history = append(s.history, respMsg)
 
-	return resp, nil
+	return stringifyParts(resp), nil
 }
 
 func (s *Simulator) ExportSession(path string) error {
@@ -177,7 +177,7 @@ func (s *Simulator) Replay(ctx context.Context, sess *Session, onMsg func(Messag
 			}
 			respMsg := Message{
 				Role:      "model",
-				Parts:     []agent.Part{{Text: resp}},
+				Parts:     resp,
 				Timestamp: time.Now(),
 			}
 			s.history = append(s.history, m)
@@ -186,4 +186,17 @@ func (s *Simulator) Replay(ctx context.Context, sess *Session, onMsg func(Messag
 		}
 	}
 	return nil
+}
+
+func stringifyParts(parts []agent.Part) string {
+	var sb strings.Builder
+	for _, p := range parts {
+		if p.Text != "" {
+			sb.WriteString(p.Text)
+		}
+		if p.InlineData != nil {
+			sb.WriteString(fmt.Sprintf("\n[Attachment: %s]", p.InlineData.MimeType))
+		}
+	}
+	return sb.String()
 }

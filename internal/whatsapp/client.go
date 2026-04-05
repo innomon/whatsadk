@@ -2,6 +2,7 @@ package whatsapp
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"os/signal"
@@ -269,37 +270,19 @@ func (c *Client) handleMessage(msg *events.Message) {
 	if c.verifyHandler != nil && auth.IsVerificationToken(text) != nil {
 		response := c.verifyHandler.Handle(ctx, userID, text)
 		if response != "" {
-			resp, err := c.wac.SendMessage(ctx, msg.Info.Chat, &waE2E.Message{
-				Conversation: proto.String(response),
-			})
-			if err != nil {
-				c.log.Errorf("Failed to send verification response: %v", err)
-				c.storeResponse(ctx, userID, uniqueID, []byte(response), time.Now(), err.Error())
-			} else {
-				c.storeResponse(ctx, userID, uniqueID, []byte(response), resp.Timestamp, "")
-			}
+			c.sendTextMessage(ctx, msg.Info.Chat, userID, uniqueID, response)
 			return
 		}
 	}
 
 	if c.oauthHandler != nil && auth.IsAuthCommand(text) {
 		response, err := c.oauthHandler.Handle(userID, text)
-		var errStr string
 		if err != nil {
 			c.log.Errorf("OAuth handler error: %v", err)
 			response = "⚠️ Something went wrong processing your AUTH request. Please try again."
-			errStr = err.Error()
 		}
 		if response != "" {
-			resp, err := c.wac.SendMessage(ctx, msg.Info.Chat, &waE2E.Message{
-				Conversation: proto.String(response),
-			})
-			if err != nil {
-				c.log.Errorf("Failed to send OAuth response: %v", err)
-				c.storeResponse(ctx, userID, uniqueID, []byte(response), time.Now(), err.Error())
-			} else {
-				c.storeResponse(ctx, userID, uniqueID, []byte(response), resp.Timestamp, errStr)
-			}
+			c.sendTextMessage(ctx, msg.Info.Chat, userID, uniqueID, response)
 		}
 		return
 	}
@@ -307,15 +290,7 @@ func (c *Client) handleMessage(msg *events.Message) {
 	if !c.isUserAllowed(msg.Info.Sender) {
 		c.log.Infof("Blocked message from non-allowed user %s", msg.Info.Sender.String())
 		response := "Sorry, we only entertain friends from India."
-		resp, err := c.wac.SendMessage(ctx, msg.Info.Chat, &waE2E.Message{
-			Conversation: proto.String(response),
-		})
-		if err != nil {
-			c.log.Errorf("Failed to send rejection message: %v", err)
-			c.storeResponse(ctx, userID, uniqueID, []byte(response), time.Now(), err.Error())
-		} else {
-			c.storeResponse(ctx, userID, uniqueID, []byte(response), resp.Timestamp, "")
-		}
+		c.sendTextMessage(ctx, msg.Info.Chat, userID, uniqueID, response)
 		return
 	}
 
@@ -330,28 +305,18 @@ func (c *Client) handleMessage(msg *events.Message) {
 		return
 	}
 
-	response, err := c.adkClient.ChatParts(ctx, userID, parts)
-	var errStr string
+	adkResponseParts, err := c.adkClient.ChatParts(ctx, userID, parts)
 	if err != nil {
 		c.log.Errorf("Failed to get agent response: %v", err)
-		response = "Sorry, I encountered an error processing your message. Please try again."
-		errStr = err.Error()
-	}
-
-	if response == "" {
+		c.sendTextMessage(ctx, msg.Info.Chat, userID, uniqueID, "Sorry, I encountered an error processing your message. Please try again.")
 		return
 	}
 
-	resp, err := c.wac.SendMessage(ctx, msg.Info.Chat, &waE2E.Message{
-		Conversation: proto.String(response),
-	})
-	if err != nil {
-		c.log.Errorf("Failed to send message: %v", err)
-		c.storeResponse(ctx, userID, uniqueID, []byte(response), time.Now(), err.Error())
-	} else {
-		c.log.Infof("Sent response to %s: %s", userID, truncate(response, 50))
-		c.storeResponse(ctx, userID, uniqueID, []byte(response), resp.Timestamp, errStr)
+	if len(adkResponseParts) == 0 {
+		return
 	}
+
+	c.sendADKParts(ctx, msg.Info.Chat, userID, uniqueID, adkResponseParts)
 }
 
 func (c *Client) processAndStoreMedia(ctx context.Context, userID, uniqueID string, msg *events.Message) []agent.Part {
@@ -428,6 +393,141 @@ func (c *Client) processAndStoreMedia(ctx context.Context, userID, uniqueID stri
 	}
 
 	return parts
+}
+
+func (c *Client) sendADKParts(ctx context.Context, chat types.JID, userID string, uniqueID string, parts []agent.Part) {
+	var caption string
+	hasSentMedia := false
+
+	for _, part := range parts {
+		if part.Text != "" {
+			if !hasSentMedia {
+				if caption != "" {
+					caption += "\n"
+				}
+				caption += part.Text
+			} else {
+				// Already sent media, or this is additional text after media
+				// Send as separate message
+				c.sendTextMessage(ctx, chat, userID, uniqueID, part.Text)
+			}
+			continue
+		}
+
+		if part.InlineData != nil {
+			// Process media
+			err := c.sendMediaPart(ctx, chat, userID, uniqueID, part.InlineData, caption)
+			if err != nil {
+				c.log.Errorf("Failed to send media part: %v", err)
+				// If media fails, maybe at least send the caption if it's the first media
+				if !hasSentMedia && caption != "" {
+					c.sendTextMessage(ctx, chat, userID, uniqueID, caption)
+				}
+			}
+			caption = "" // Reset caption after it's used
+			hasSentMedia = true
+		}
+	}
+
+	// If we have remaining caption and no media was ever sent
+	if !hasSentMedia && caption != "" {
+		c.sendTextMessage(ctx, chat, userID, uniqueID, caption)
+	}
+}
+
+func (c *Client) sendTextMessage(ctx context.Context, chat types.JID, userID string, uniqueID string, text string) {
+	resp, err := c.wac.SendMessage(ctx, chat, &waE2E.Message{
+		Conversation: proto.String(text),
+	})
+	if err != nil {
+		c.log.Errorf("Failed to send text message: %v", err)
+		c.storeResponse(ctx, userID, uniqueID, []byte(text), time.Now(), err.Error())
+	} else {
+		c.log.Infof("Sent text response to %s: %s", userID, truncate(text, 50))
+		c.storeResponse(ctx, userID, uniqueID, []byte(text), resp.Timestamp, "")
+	}
+}
+
+func (c *Client) sendMediaPart(ctx context.Context, chat types.JID, userID string, uniqueID string, media *agent.InlineData, caption string) error {
+	data, err := base64.StdEncoding.DecodeString(media.Data)
+	if err != nil {
+		return fmt.Errorf("failed to decode base64 media: %w", err)
+	}
+
+	var waMediaType whatsmeow.MediaType
+	mimeType := media.MimeType
+	switch {
+	case strings.HasPrefix(mimeType, "image/"):
+		waMediaType = whatsmeow.MediaImage
+	case strings.HasPrefix(mimeType, "audio/"):
+		waMediaType = whatsmeow.MediaAudio
+	case strings.HasPrefix(mimeType, "video/"):
+		waMediaType = whatsmeow.MediaVideo
+	default:
+		waMediaType = whatsmeow.MediaDocument
+	}
+
+	resp, err := c.wac.Upload(ctx, data, waMediaType)
+	if err != nil {
+		return fmt.Errorf("failed to upload media: %w", err)
+	}
+
+	var msg waE2E.Message
+	switch waMediaType {
+	case whatsmeow.MediaImage:
+		msg.ImageMessage = &waE2E.ImageMessage{
+			URL:           proto.String(resp.URL),
+			DirectPath:    proto.String(resp.DirectPath),
+			MediaKey:      resp.MediaKey,
+			Mimetype:      proto.String(mimeType),
+			FileEncSHA256: resp.FileEncSHA256,
+			FileSHA256:    resp.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(data))),
+			Caption:       proto.String(caption),
+		}
+	case whatsmeow.MediaAudio:
+		msg.AudioMessage = &waE2E.AudioMessage{
+			URL:           proto.String(resp.URL),
+			DirectPath:    proto.String(resp.DirectPath),
+			MediaKey:      resp.MediaKey,
+			Mimetype:      proto.String(mimeType),
+			FileEncSHA256: resp.FileEncSHA256,
+			FileSHA256:    resp.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(data))),
+		}
+	case whatsmeow.MediaVideo:
+		msg.VideoMessage = &waE2E.VideoMessage{
+			URL:           proto.String(resp.URL),
+			DirectPath:    proto.String(resp.DirectPath),
+			MediaKey:      resp.MediaKey,
+			Mimetype:      proto.String(mimeType),
+			FileEncSHA256: resp.FileEncSHA256,
+			FileSHA256:    resp.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(data))),
+			Caption:       proto.String(caption),
+		}
+	case whatsmeow.MediaDocument:
+		msg.DocumentMessage = &waE2E.DocumentMessage{
+			URL:           proto.String(resp.URL),
+			DirectPath:    proto.String(resp.DirectPath),
+			MediaKey:      resp.MediaKey,
+			Mimetype:      proto.String(mimeType),
+			FileEncSHA256: resp.FileEncSHA256,
+			FileSHA256:    resp.FileSHA256,
+			FileLength:    proto.Uint64(uint64(len(data))),
+			Caption:       proto.String(caption),
+		}
+	}
+
+	waResp, err := c.wac.SendMessage(ctx, chat, &msg)
+	if err != nil {
+		return fmt.Errorf("failed to send media message: %w", err)
+	}
+
+	c.log.Infof("Sent %s response to %s", waMediaType, userID)
+	c.storeResponse(ctx, userID, uniqueID, []byte(fmt.Sprintf("[%s]", waMediaType)), waResp.Timestamp, "")
+
+	return nil
 }
 
 func (c *Client) isUserAllowed(jid types.JID) bool {
