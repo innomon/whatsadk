@@ -414,6 +414,7 @@ WhatsADK includes a built-in WhatsApp message simulator for testing ADK agent wo
 ### Features
 - **TUI Interface**: Interactive chat-like interface in your terminal.
 - **Attachments**: Simulate sending images, audio, video, and documents.
+- **Multimedia Reception**: Automatically saves images, audio, video, and documents received from the agent to a local `media_received/` directory and displays the file path in the TUI.
 - **Session Export/Import**: Save a simulation session to JSON and replay it later.
 - **Real Session Export**: Export actual WhatsApp conversations from the gateway's database for debugging.
 - **Slash Commands**: Control the simulator directly from the message input.

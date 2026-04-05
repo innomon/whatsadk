@@ -2,6 +2,7 @@ package simulator
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -29,13 +30,17 @@ type Simulator struct {
 	mediaProc *whatsapp.Processor
 	userID    string
 	history   []Message
+	mediaDir  string
 }
 
 func New(adkClient *agent.Client, mediaProc *whatsapp.Processor) *Simulator {
+	mediaDir := "media_received"
+	_ = os.MkdirAll(mediaDir, 0755)
 	return &Simulator{
 		adkClient: adkClient,
 		mediaProc: mediaProc,
 		userID:    "1234567890", // default user
+		mediaDir:  mediaDir,
 	}
 }
 
@@ -68,7 +73,7 @@ func (s *Simulator) SendText(ctx context.Context, text string) (string, error) {
 	}
 	s.history = append(s.history, respMsg)
 
-	return stringifyParts(resp), nil
+	return s.formatParts(resp), nil
 }
 
 func (s *Simulator) SendWithAttachment(ctx context.Context, text string, filePath string) (string, error) {
@@ -138,7 +143,7 @@ func (s *Simulator) SendWithAttachment(ctx context.Context, text string, filePat
 	}
 	s.history = append(s.history, respMsg)
 
-	return stringifyParts(resp), nil
+	return s.formatParts(resp), nil
 }
 
 func (s *Simulator) ExportSession(path string) error {
@@ -188,15 +193,67 @@ func (s *Simulator) Replay(ctx context.Context, sess *Session, onMsg func(Messag
 	return nil
 }
 
-func stringifyParts(parts []agent.Part) string {
+func (s *Simulator) formatParts(parts []agent.Part) string {
 	var sb strings.Builder
 	for _, p := range parts {
 		if p.Text != "" {
+			if sb.Len() > 0 {
+				sb.WriteString("\n")
+			}
 			sb.WriteString(p.Text)
 		}
 		if p.InlineData != nil {
-			sb.WriteString(fmt.Sprintf("\n[Attachment: %s]", p.InlineData.MimeType))
+			path, err := s.saveMedia(p.InlineData)
+			if err != nil {
+				sb.WriteString(fmt.Sprintf("\n[Attachment error: %v]", err))
+			} else {
+				sb.WriteString(fmt.Sprintf("\n[Attachment: %s]", path))
+			}
 		}
 	}
 	return sb.String()
+}
+
+func (s *Simulator) saveMedia(data *agent.InlineData) (string, error) {
+	raw, err := base64.StdEncoding.DecodeString(data.Data)
+	if err != nil {
+		return "", err
+	}
+
+	ext := mimeToExt(data.MimeType)
+	filename := fmt.Sprintf("media_%d%s", time.Now().UnixNano(), ext)
+	path := filepath.Join(s.mediaDir, filename)
+
+	if err := os.WriteFile(path, raw, 0644); err != nil {
+		return "", err
+	}
+
+	return path, nil
+}
+
+func mimeToExt(mime string) string {
+	switch mime {
+	case "image/jpeg":
+		return ".jpg"
+	case "image/png":
+		return ".png"
+	case "image/webp":
+		return ".webp"
+	case "audio/wav":
+		return ".wav"
+	case "audio/mpeg":
+		return ".mp3"
+	case "audio/ogg", "audio/opus":
+		return ".ogg"
+	case "video/mp4":
+		return ".mp4"
+	case "application/pdf":
+		return ".pdf"
+	case "text/plain":
+		return ".txt"
+	case "text/csv":
+		return ".csv"
+	default:
+		return ".bin"
+	}
 }
