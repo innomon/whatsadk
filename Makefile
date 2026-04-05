@@ -4,6 +4,8 @@
 BINARY_GATEWAY=gateway
 BINARY_KEYGEN=keygen
 BINARY_MCP=whatsadk-mcp
+BINARY_SIMULATOR=simulator
+BINARY_ADKSIM=adksim
 
 # Directories
 BIN_DIR=bin
@@ -23,6 +25,8 @@ build:
 	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_GATEWAY) ./$(CMD_DIR)/gateway
 	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_KEYGEN) ./$(CMD_DIR)/keygen
 	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_MCP) ./$(CMD_DIR)/mcp
+	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_SIMULATOR) ./$(CMD_DIR)/simulator
+	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_ADKSIM) ./$(CMD_DIR)/adksim
 
 build-mcp:
 	@mkdir -p $(BIN_DIR)

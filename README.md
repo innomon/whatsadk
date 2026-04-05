@@ -30,12 +30,14 @@ A Go utility that connects WhatsApp via QR code and proxies messages to a remote
 The project uses a `Makefile` to manage builds. All binaries are generated in the `bin/` directory.
 
 ```bash
-# Build all binaries (gateway and keygen)
+# Build all binaries (gateway, simulators, etc.)
 make build
 
 # The binaries will be available in:
 # bin/gateway
 # bin/keygen
+# bin/simulator
+# bin/adksim
 ```
 
 ## Configuration
@@ -409,45 +411,38 @@ Add to your `~/.config/open-code/mcp.json`:
 
 ## Simulator & Testing
 
-WhatsADK includes a built-in WhatsApp message simulator for testing ADK agent workflows without needing a physical device. It features a Terminal User Interface (TUI), support for attachments, and a slash command system.
+WhatsADK includes two simulators for testing the gateway flows without a physical device.
 
-### Features
-- **TUI Interface**: Interactive chat-like interface in your terminal.
-- **Attachments**: Simulate sending images, audio, video, and documents.
-- **Multimedia Reception**: Automatically saves images, audio, video, and documents received from the agent to a local `media_received/` directory and displays the file path in the TUI.
-- **Session Export/Import**: Save a simulation session to JSON and replay it later.
-- **Real Session Export**: Export actual WhatsApp conversations from the gateway's database for debugging.
-- **Slash Commands**: Control the simulator directly from the message input.
+### 1. WhatsApp Simulator (Simulator)
 
-### Installation
+Simulates the **WhatsApp ➔ Gateway ➔ ADK** flow. It presents a WhatsApp-like TUI, allowing you to send messages and media to your ADK agent.
 
-```bash
-# Build the simulator binary
-go build -o bin/simulator ./cmd/simulator
-```
+- **TUI Interface**: Interactive chat-like interface.
+- **Attachments**: Simulate sending images, audio, video, and documents via `/attach`.
+- **Multimedia Reception**: Automatically saves media from the agent to `media_received/`.
+- **Usage**: `./bin/simulator`
 
-### Usage
+### 2. ADK Reverse Simulator (ADKSim)
 
-#### 1. Start the TUI Simulator
+Simulates the **Gateway ➔ ADK** flow. It acts as the ADK server, allowing you to manually provide the "AI" responses in a TUI. This is useful for testing how the gateway handles complex agent responses (e.g., specific media sequencing or slow responses).
 
-The simulator uses your existing `config.yaml` to connect to the ADK service.
+- **HTTP Server**: Implements the ADK API (`/run`, `/run_sse`) on port 8080 (default).
+- **Manual Response**: Type text or use `/attach <path>` to send files back to WhatsApp.
+- **Inbound Media**: Saves incoming media from WhatsApp to `adk_media_received/`.
+- **Usage**: `./bin/adksim -port 8080`
 
-```bash
-./bin/simulator
-```
-For simple text messages, enter your text directly into the input area at the bottom of the TUI
-
-#### 2. Slash Commands (inside TUI)
+#### TUI Commands (both simulators)
 
 | Command | Description |
 |---------|-------------|
 | `/help` | List all available commands |
-| `/set_sender <phone>` | Change the simulated sender's phone number |
-| `/attach <path> [caption]` | Simulate sending a file with an optional caption |
-| `/export <filename.json>` | Save the current simulation history to a file |
-| `/replay <filename.json>` | Load and replay a previously saved session |
+| `/attach <path> [caption/mime]` | Attach a file to the next message |
+| `/clear` | Clear the chat history |
+| `/set_sender <phone>` | (WhatsApp Simulator only) Change simulated sender |
+| `/export <filename>` | Export session to JSON |
+| `/replay <filename>` | Replay session from JSON |
 
-#### 3. Export a Real WhatsApp Session
+#### Export a Real WhatsApp Session
 
 To debug a specific agent failure using a real conversation log:
 

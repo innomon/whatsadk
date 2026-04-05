@@ -41,13 +41,17 @@ whatsadk/
 ├── cmd/
 │   ├── gateway/main.go              # Application entry point & dependency wiring
 │   ├── keygen/main.go               # Ed25519 key pair generator for OAuth
-│   └── mcp/main.go                  # MCP Server for agentic tool access
+│   ├── mcp/main.go                  # MCP Server for agentic tool access
+│   ├── simulator/main.go            # WhatsApp TUI simulator
+│   └── adksim/main.go               # ADK Reverse TUI simulator
 ├── internal/
 │   ├── config/config.go             # YAML configuration loader with env overrides
 │   ├── whatsapp/
 │   │   ├── client.go                # WhatsApp client, QR auth, message routing
 │   │   └── media.go                 # Media Bridge processor (ffmpeg, resizing)
 │   ├── agent/client.go              # ADK HTTP client (REST & SSE modes)
+│   ├── simulator/                   # Logic for the WhatsApp simulator
+│   ├── adksim/                      # Logic for the ADK reverse simulator
 │   ├── auth/
 │   │   ├── claims.go                # JWT custom claims struct (user_id, channel)
 │   │   ├── jwt.go                   # RS256 JWT token generator
@@ -176,6 +180,16 @@ Handles the reverse OTP verification flow:
 5. Signs a callback JWT (with audience set to the app name)
 6. POSTs the signed JWT to the app's `callback_url`
 7. Returns a user-facing confirmation/error message
+
+### Simulators — Testing Tools
+
+The project includes two TUI-based simulators for end-to-end testing without physical devices:
+
+#### WhatsApp Simulator (`internal/simulator`)
+Simulates the **WhatsApp ➔ Gateway** flow. It sends text and media to the gateway as if they came from a real WhatsApp user. It also saves media received from the agent to `media_received/`.
+
+#### ADK Reverse Simulator (`internal/adksim`)
+Simulates the **Gateway ➔ ADK** flow. It acts as the ADK server, listening for `/run` and `/run_sse` requests. A human operator uses the TUI to provide the agent's response (text and media), allowing manual testing of the gateway's outbound delivery logic. Incoming media from WhatsApp is saved to `adk_media_received/`.
 
 ## Data Flow
 
