@@ -151,6 +151,9 @@ func (c *Client) Run(ctx context.Context) error {
 
 	fmt.Println("🤖 WhatsApp-ADK Gateway is running. Press Ctrl+C to stop.")
 
+	// Start command processor
+	go c.processCommands(ctx)
+
 	select {
 	case <-ctx.Done():
 		c.log.Infof("Context cancelled, disconnecting...")
@@ -160,6 +163,125 @@ func (c *Client) Run(ctx context.Context) error {
 
 	c.wac.Disconnect()
 	return nil
+}
+
+func (c *Client) processCommands(ctx context.Context) {
+	if c.store == nil {
+		return
+	}
+
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			cmds, err := c.store.PollPendingCommands(ctx)
+			if err != nil {
+				c.log.Errorf("Failed to poll commands: %v", err)
+				continue
+			}
+
+			for _, cmd := range cmds {
+				c.handleCommand(ctx, cmd)
+			}
+		}
+	}
+}
+
+func (c *Client) handleCommand(ctx context.Context, cmd store.Command) {
+	c.log.Infof("Processing command %d: %s", cmd.ID, cmd.Command)
+
+	var result interface{}
+	var err error
+
+	switch cmd.Command {
+	case "block":
+		var payload struct {
+			JID string `json:"jid"`
+		}
+		if err = json.Unmarshal(cmd.Payload, &payload); err == nil {
+			err = c.RemoteBlock(payload.JID)
+		}
+	case "unblock":
+		var payload struct {
+			JID string `json:"jid"`
+		}
+		if err = json.Unmarshal(cmd.Payload, &payload); err == nil {
+			err = c.RemoteUnblock(payload.JID)
+		}
+	case "get_blocklist":
+		result, err = c.RemoteGetBlocklist()
+	default:
+		err = fmt.Errorf("unknown command: %s", cmd.Command)
+	}
+
+	status := "completed"
+	if err != nil {
+		c.log.Errorf("Command %d failed: %v", cmd.ID, err)
+		status = "failed"
+		result = map[string]string{"error": err.Error()}
+	}
+
+	if err := c.store.UpdateCommandStatus(ctx, cmd.ID, status, result); err != nil {
+		c.log.Errorf("Failed to update command status for %d: %v", cmd.ID, err)
+	}
+}
+
+func (c *Client) RemoteBlock(jidStr string) error {
+	jid, err := types.ParseJID(jidStr)
+	if err != nil {
+		// Try appending server if missing
+		if !strings.Contains(jidStr, "@") {
+			jid, err = types.ParseJID(jidStr + "@" + types.DefaultUserServer)
+		}
+		if err != nil {
+			return fmt.Errorf("invalid JID: %w", err)
+		}
+	}
+
+	if jid.Server != types.DefaultUserServer {
+		return fmt.Errorf("can only block individual users (s.whatsapp.net)")
+	}
+
+	_, err = c.wac.UpdateBlocklist(jid, types.BlocklistActionBlock)
+	if err != nil {
+		return fmt.Errorf("whatsmeow error: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) RemoteUnblock(jidStr string) error {
+	jid, err := types.ParseJID(jidStr)
+	if err != nil {
+		if !strings.Contains(jidStr, "@") {
+			jid, err = types.ParseJID(jidStr + "@" + types.DefaultUserServer)
+		}
+		if err != nil {
+			return fmt.Errorf("invalid JID: %w", err)
+		}
+	}
+
+	_, err = c.wac.UpdateBlocklist(jid, types.BlocklistActionUnblock)
+	if err != nil {
+		return fmt.Errorf("whatsmeow error: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) RemoteGetBlocklist() ([]string, error) {
+	list, err := c.wac.GetBlocklist()
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch blocklist: %w", err)
+	}
+
+	jids := make([]string, len(list.JIDs))
+	for i, jid := range list.JIDs {
+		jids[i] = jid.String()
+	}
+	return jids, nil
 }
 
 func (c *Client) handleEvent(evt interface{}) {

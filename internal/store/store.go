@@ -50,6 +50,36 @@ func (s *Store) migrate() error {
 	}
 
 	_, err = s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS whatsmeow_contacts (
+			our_jid TEXT NOT NULL,
+			their_jid TEXT NOT NULL,
+			full_name TEXT,
+			short_name TEXT,
+			push_name TEXT,
+			business_name TEXT,
+			PRIMARY KEY (our_jid, their_jid)
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS whatsmeow_commands (
+			id SERIAL PRIMARY KEY,
+			command TEXT NOT NULL,
+			payload JSONB,
+			status TEXT NOT NULL DEFAULT 'pending',
+			result JSONB,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS filesys (
 			path TEXT PRIMARY KEY,
 			metadata JSONB,
@@ -59,6 +89,108 @@ func (s *Store) migrate() error {
 		CREATE INDEX IF NOT EXISTS idx_filesys_metadata ON filesys USING GIN (metadata);
 	`)
 	return err
+}
+
+type Command struct {
+	ID        int64           `json:"id"`
+	Command   string          `json:"command"`
+	Payload   json.RawMessage `json:"payload"`
+	Status    string          `json:"status"`
+	Result    json.RawMessage `json:"result"`
+	CreatedAt time.Time       `json:"created_at"`
+	UpdatedAt time.Time       `json:"updated_at"`
+}
+
+func (s *Store) EnqueueCommand(ctx context.Context, cmd string, payload interface{}) (int64, error) {
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return 0, fmt.Errorf("marshal payload: %w", err)
+	}
+
+	var id int64
+	err = s.db.QueryRowContext(ctx,
+		"INSERT INTO whatsmeow_commands (command, payload, status) VALUES ($1, $2, 'pending') RETURNING id",
+		cmd, payloadJSON,
+	).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("enqueue command: %w", err)
+	}
+	return id, nil
+}
+
+func (s *Store) UpdateCommandStatus(ctx context.Context, id int64, status string, result interface{}) error {
+	var resultJSON []byte
+	var err error
+	if result != nil {
+		resultJSON, err = json.Marshal(result)
+		if err != nil {
+			return fmt.Errorf("marshal result: %w", err)
+		}
+	}
+
+	_, err = s.db.ExecContext(ctx,
+		"UPDATE whatsmeow_commands SET status = $1, result = $2, updated_at = NOW() WHERE id = $3",
+		status, resultJSON, id,
+	)
+	if err != nil {
+		return fmt.Errorf("update command status: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) PollPendingCommands(ctx context.Context) ([]Command, error) {
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT id, command, payload, status, result, created_at, updated_at FROM whatsmeow_commands WHERE status = 'pending' ORDER BY created_at ASC",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("poll pending commands: %w", err)
+	}
+	defer rows.Close()
+
+	var commands []Command
+	for rows.Next() {
+		var c Command
+		var payload, result []byte
+		err := rows.Scan(&c.ID, &c.Command, &payload, &c.Status, &result, &c.CreatedAt, &c.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("scan command row: %w", err)
+		}
+		c.Payload = payload
+		c.Result = result
+		commands = append(commands, c)
+	}
+	return commands, rows.Err()
+}
+
+func (s *Store) WaitForCommand(ctx context.Context, id int64, timeout time.Duration) (*Command, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-ticker.C:
+			var c Command
+			var payload, result []byte
+			err := s.db.QueryRowContext(ctx,
+				"SELECT id, command, payload, status, result, created_at, updated_at FROM whatsmeow_commands WHERE id = $1",
+				id,
+			).Scan(&c.ID, &c.Command, &payload, &c.Status, &result, &c.CreatedAt, &c.UpdatedAt)
+			if err != nil {
+				return nil, fmt.Errorf("get command: %w", err)
+			}
+			c.Payload = payload
+			c.Result = result
+
+			if c.Status == "completed" || c.Status == "failed" {
+				return &c, nil
+			}
+		}
+	}
 }
 
 func (s *Store) PutFile(ctx context.Context, path string, metadata interface{}, content []byte, timestamp time.Time) error {
