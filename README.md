@@ -352,8 +352,9 @@ docker exec -i whatsadk-db psql -U postgres -d <database_name> -c "SELECT * FROM
 WhatsADK includes an MCP server that allows AI agents (like Claude Code, Cursor, and OpenCode) to interact with your WhatsApp contacts and blacklist directly.
 
 ### Tools Available:
-- `blacklist_add`: Block a phone number/JID.
-- `blacklist_remove`: Unblock a phone number/JID.
+- `blacklist_add`: Block a phone number/JID (Local Shadow Ban + Remote WhatsApp Block).
+- `blacklist_remove`: Unblock a phone number/JID (Local Shadow Ban + Remote WhatsApp Unblock).
+- `blacklist_get_remote`: Fetch the official blocklist from WhatsApp servers.
 - `query_contacts`: Search for WhatsApp contacts by name or JID.
 - `get_message_logs`: Retrieve recent message logs for a specific user.
 

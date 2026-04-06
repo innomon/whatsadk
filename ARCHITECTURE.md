@@ -88,10 +88,13 @@ The `main.go` file implements a Model Context Protocol server:
 1. Loads configuration via `config.Load()`
 2. Connects to the shared PostgreSQL database via `internal/store`
 3. Exposes tools for external agents:
-    - `blacklist_add` / `blacklist_remove`: Manage global blocking.
+    - `blacklist_add`: Adds a number to the local `blacklisted_numbers` table **and** enqueues a command for the Gateway to perform a remote block on WhatsApp.
+    - `blacklist_remove`: Removes a number from local blacklist **and** enqueues a remote unblock command.
+    - `blacklist_get_remote`: Fetches the official blocklist directly from WhatsApp servers (via Gateway).
     - `query_contacts`: Search synchronized WhatsApp contacts.
     - `get_message_logs`: Inspect the `filesys` table for recent traffic.
-4. Communicates over `stdio` for seamless integration with Claude Code, Cursor, and other local dev tools.
+4. **Command Queue (IPC)**: Since the MCP server and Gateway are separate processes, they communicate via a `whatsmeow_commands` table in the shared database. The MCP server enqueues requests, and the Gateway polls this table to execute them using its active WhatsApp session.
+5. Communicates over `stdio` for seamless integration with Claude Code, Cursor, and other local dev tools.
 
 ### `internal/config` — Configuration
 

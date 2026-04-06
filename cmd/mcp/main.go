@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -18,13 +19,43 @@ type BlacklistAddArgs struct {
 }
 
 func BlacklistAdd(ctx context.Context, s *store.Store, args BlacklistAddArgs) (*mcp.CallToolResult, any, error) {
+	// 1. Local Shadow Ban
 	if err := s.AddBlacklist(ctx, args.Phone, args.Reason); err != nil {
-		return nil, nil, fmt.Errorf("failed to add to blacklist: %w", err)
+		return nil, nil, fmt.Errorf("failed to add to local blacklist: %w", err)
 	}
+
+	// 2. Remote WhatsApp Block
+	cmdID, err := s.EnqueueCommand(ctx, "block", map[string]string{"jid": args.Phone})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to enqueue remote block: %w", err)
+	}
+
+	// Wait for result
+	cmd, err := s.WaitForCommand(ctx, cmdID, 10*time.Second)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: fmt.Sprintf("Added %s to local blacklist, but remote block timed out. It will be processed when Gateway is online.", args.Phone),
+				},
+			},
+		}, nil, nil
+	}
+
+	if cmd.Status == "failed" {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: fmt.Sprintf("Added %s to local blacklist, but remote block failed: %s", args.Phone, string(cmd.Result)),
+				},
+			},
+		}, nil, nil
+	}
+
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
-				Text: fmt.Sprintf("Successfully blacklisted %s", args.Phone),
+				Text: fmt.Sprintf("Successfully blacklisted %s (Local & Remote)", args.Phone),
 			},
 		},
 	}, nil, nil
@@ -35,13 +66,69 @@ type BlacklistRemoveArgs struct {
 }
 
 func BlacklistRemove(ctx context.Context, s *store.Store, args BlacklistRemoveArgs) (*mcp.CallToolResult, any, error) {
+	// 1. Local Removal
 	if err := s.RemoveBlacklist(ctx, args.Phone); err != nil {
-		return nil, nil, fmt.Errorf("failed to remove from blacklist: %w", err)
+		return nil, nil, fmt.Errorf("failed to remove from local blacklist: %w", err)
 	}
+
+	// 2. Remote WhatsApp Unblock
+	cmdID, err := s.EnqueueCommand(ctx, "unblock", map[string]string{"jid": args.Phone})
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to enqueue remote unblock: %w", err)
+	}
+
+	// Wait for result
+	cmd, err := s.WaitForCommand(ctx, cmdID, 10*time.Second)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: fmt.Sprintf("Removed %s from local blacklist, but remote unblock timed out.", args.Phone),
+				},
+			},
+		}, nil, nil
+	}
+
+	if cmd.Status == "failed" {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: fmt.Sprintf("Removed %s from local blacklist, but remote unblock failed: %s", args.Phone, string(cmd.Result)),
+				},
+			},
+		}, nil, nil
+	}
+
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
-				Text: fmt.Sprintf("Successfully removed %s from blacklist", args.Phone),
+				Text: fmt.Sprintf("Successfully removed %s from blacklist (Local & Remote)", args.Phone),
+			},
+		},
+	}, nil, nil
+}
+
+type BlacklistGetRemoteArgs struct{}
+
+func BlacklistGetRemote(ctx context.Context, s *store.Store, _ BlacklistGetRemoteArgs) (*mcp.CallToolResult, any, error) {
+	cmdID, err := s.EnqueueCommand(ctx, "get_blocklist", nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to enqueue get_blocklist: %w", err)
+	}
+
+	cmd, err := s.WaitForCommand(ctx, cmdID, 10*time.Second)
+	if err != nil {
+		return nil, nil, fmt.Errorf("request timed out: %w", err)
+	}
+
+	if cmd.Status == "failed" {
+		return nil, nil, fmt.Errorf("remote request failed: %s", string(cmd.Result))
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: string(cmd.Result),
 			},
 		},
 	}, nil, nil
@@ -111,16 +198,23 @@ func main() {
 	// Tools
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "blacklist_add",
-		Description: "Add a phone number or JID to the global blacklist",
+		Description: "Add a phone number or JID to the global blacklist (Local Shadow Ban + Remote WhatsApp Block)",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args BlacklistAddArgs) (*mcp.CallToolResult, any, error) {
 		return BlacklistAdd(ctx, s, args)
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "blacklist_remove",
-		Description: "Remove a phone number or JID from the global blacklist",
+		Description: "Remove a phone number or JID from the global blacklist (Local Shadow Ban + Remote WhatsApp Unblock)",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args BlacklistRemoveArgs) (*mcp.CallToolResult, any, error) {
 		return BlacklistRemove(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "blacklist_get_remote",
+		Description: "Fetch the official blocklist from WhatsApp servers",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args BlacklistGetRemoteArgs) (*mcp.CallToolResult, any, error) {
+		return BlacklistGetRemote(ctx, s, args)
 	})
 
 	mcp.AddTool(server, &mcp.Tool{

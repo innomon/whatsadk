@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -246,7 +247,7 @@ func (c *Client) RemoteBlock(jidStr string) error {
 		return fmt.Errorf("can only block individual users (s.whatsapp.net)")
 	}
 
-	_, err = c.wac.UpdateBlocklist(jid, types.BlocklistActionBlock)
+	_, err = c.wac.UpdateBlocklist(context.Background(), jid, events.BlocklistChangeActionBlock)
 	if err != nil {
 		return fmt.Errorf("whatsmeow error: %w", err)
 	}
@@ -264,7 +265,7 @@ func (c *Client) RemoteUnblock(jidStr string) error {
 		}
 	}
 
-	_, err = c.wac.UpdateBlocklist(jid, types.BlocklistActionUnblock)
+	_, err = c.wac.UpdateBlocklist(context.Background(), jid, events.BlocklistChangeActionUnblock)
 	if err != nil {
 		return fmt.Errorf("whatsmeow error: %w", err)
 	}
@@ -272,7 +273,7 @@ func (c *Client) RemoteUnblock(jidStr string) error {
 }
 
 func (c *Client) RemoteGetBlocklist() ([]string, error) {
-	list, err := c.wac.GetBlocklist()
+	list, err := c.wac.GetBlocklist(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch blocklist: %w", err)
 	}
