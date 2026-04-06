@@ -329,7 +329,9 @@ func (s *Store) GetFilesysLogs(ctx context.Context, phone string, limit int) ([]
 
 	pathPattern := "whatsmeow/" + phone + "/%"
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT path, metadata, content, tmstamp 
+		`SELECT path, metadata, 
+		        CASE WHEN (metadata->>'mime_type' = 'text/plain') THEN content ELSE NULL END as content,
+		        tmstamp 
 		 FROM filesys 
 		 WHERE path LIKE $1 
 		 ORDER BY tmstamp DESC 
@@ -338,6 +340,38 @@ func (s *Store) GetFilesysLogs(ctx context.Context, phone string, limit int) ([]
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get filesys logs: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []FileEntry
+	for rows.Next() {
+		var e FileEntry
+		if err := rows.Scan(&e.Path, &e.Metadata, &e.Content, &e.Timestamp); err != nil {
+			return nil, fmt.Errorf("scan filesys row: %w", err)
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+func (s *Store) GetLatestGlobalMessages(ctx context.Context, limit int) ([]FileEntry, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	// Filter for request/response paths to avoid sync chatter
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT path, metadata, 
+		        CASE WHEN (metadata->>'mime_type' = 'text/plain') THEN content ELSE NULL END as content,
+		        tmstamp 
+		 FROM filesys 
+		 WHERE path LIKE 'whatsmeow/%/request' OR path LIKE 'whatsmeow/%/response'
+		 ORDER BY tmstamp DESC 
+		 LIMIT $1`,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get latest global messages: %w", err)
 	}
 	defer rows.Close()
 

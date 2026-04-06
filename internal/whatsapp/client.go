@@ -215,6 +215,15 @@ func (c *Client) handleCommand(ctx context.Context, cmd store.Command) {
 		}
 	case "get_blocklist":
 		result, err = c.RemoteGetBlocklist()
+	case "send_message":
+		var payload struct {
+			JID   string             `json:"jid"`
+			Text  string             `json:"text"`
+			Media []agent.InlineData `json:"media"`
+		}
+		if err = json.Unmarshal(cmd.Payload, &payload); err == nil {
+			err = c.SendMessage(ctx, payload.JID, payload.Text, payload.Media)
+		}
 	default:
 		err = fmt.Errorf("unknown command: %s", cmd.Command)
 	}
@@ -269,6 +278,36 @@ func (c *Client) RemoteUnblock(jidStr string) error {
 	if err != nil {
 		return fmt.Errorf("whatsmeow error: %w", err)
 	}
+	return nil
+}
+
+func (c *Client) SendMessage(ctx context.Context, jidStr string, text string, media []agent.InlineData) error {
+	jid, err := types.ParseJID(jidStr)
+	if err != nil {
+		if !strings.Contains(jidStr, "@") {
+			jid, err = types.ParseJID(jidStr + "@" + types.DefaultUserServer)
+		}
+		if err != nil {
+			return fmt.Errorf("invalid JID: %w", err)
+		}
+	}
+
+	userID := jid.User
+	uniqueID := fmt.Sprintf("mcp_%d", time.Now().UnixNano())
+
+	// Send text if provided
+	if text != "" {
+		c.sendTextMessage(ctx, jid, userID, uniqueID, text)
+	}
+
+	// Send media if provided
+	for _, m := range media {
+		err := c.sendMediaPart(ctx, jid, userID, uniqueID, &m, "")
+		if err != nil {
+			return fmt.Errorf("failed to send media: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -414,6 +453,13 @@ func (c *Client) handleMessage(msg *events.Message) {
 		c.log.Infof("Blocked message from non-allowed user %s", msg.Info.Sender.String())
 		response := "Sorry, we only entertain friends from India."
 		c.sendTextMessage(ctx, msg.Info.Chat, userID, uniqueID, response)
+		return
+	}
+
+	// Autonomous Mode Check: If ADK is disabled, we stop here.
+	// External agents will pick up the request from filesys and reply via SendMessage.
+	if !c.cfg.ADK.Enabled {
+		c.log.Infof("ADK is disabled. Skipping automatic response for %s", userID)
 		return
 	}
 

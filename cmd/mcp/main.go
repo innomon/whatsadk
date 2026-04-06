@@ -9,9 +9,87 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/innomon/whatsadk/internal/agent"
 	"github.com/innomon/whatsadk/internal/config"
 	"github.com/innomon/whatsadk/internal/store"
 )
+
+type SendMessageArgs struct {
+	JID   string             `json:"jid"`
+	Text  string             `json:"text,omitempty"`
+	Media []agent.InlineData `json:"media,omitempty"`
+}
+
+func SendMessage(ctx context.Context, s *store.Store, args SendMessageArgs) (*mcp.CallToolResult, any, error) {
+	if args.JID == "" {
+		return nil, nil, fmt.Errorf("jid is required")
+	}
+	if args.Text == "" && len(args.Media) == 0 {
+		return nil, nil, fmt.Errorf("either text or media is required")
+	}
+
+	cmdID, err := s.EnqueueCommand(ctx, "send_message", args)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to enqueue send_message: %w", err)
+	}
+
+	cmd, err := s.WaitForCommand(ctx, cmdID, 15*time.Second)
+	if err != nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: "Message enqueued but Gateway response timed out. It will be sent when Gateway is online.",
+				},
+			},
+		}, nil, nil
+	}
+
+	if cmd.Status == "failed" {
+		return nil, nil, fmt.Errorf("failed to send message: %s", string(cmd.Result))
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: fmt.Sprintf("Message sent to %s. Status: %s. Result: %s", args.JID, cmd.Status, string(cmd.Result)),
+			},
+		},
+	}, nil, nil
+}
+
+type GetRecentMessagesArgs struct {
+	JID   string `json:"jid,omitempty"`
+	Limit int    `json:"limit,omitempty"`
+}
+
+func GetRecentMessages(ctx context.Context, s *store.Store, args GetRecentMessagesArgs) (*mcp.CallToolResult, any, error) {
+	limit := args.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+
+	var logs []store.FileEntry
+	var err error
+
+	if args.JID != "" {
+		logs, err = s.GetFilesysLogs(ctx, args.JID, limit)
+	} else {
+		logs, err = s.GetLatestGlobalMessages(ctx, limit)
+	}
+
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get messages: %w", err)
+	}
+
+	data, _ := json.MarshalIndent(logs, "", "  ")
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: string(data),
+			},
+		},
+	}, nil, nil
+}
 
 type BlacklistAddArgs struct {
 	Phone  string `json:"phone"`
@@ -226,9 +304,23 @@ func main() {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_message_logs",
-		Description: "Retrieve recent message logs for a specific user",
-	}, func(ctx context.Context, req *mcp.CallToolRequest, args GetLogsArgs) (*mcp.CallToolResult, any, error) {
-		return GetLogs(ctx, s, args)
+		Description: "Retrieve recent message logs for a specific user (Alias for get_recent_messages)",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args GetRecentMessagesArgs) (*mcp.CallToolResult, any, error) {
+		return GetRecentMessages(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_recent_messages",
+		Description: "Retrieve recent message logs globally or for a specific user. Chronological order.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args GetRecentMessagesArgs) (*mcp.CallToolResult, any, error) {
+		return GetRecentMessages(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "send_message",
+		Description: "Send a multi-modal message (text and/or media) to a WhatsApp user",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args SendMessageArgs) (*mcp.CallToolResult, any, error) {
+		return SendMessage(ctx, s, args)
 	})
 
 	transport := &mcp.StdioTransport{}

@@ -410,6 +410,22 @@ Add to your `~/.config/open-code/mcp.json`:
 }
 ```
 
+### Autonomous Mode (Agentic Control)
+
+You can allow external agents (Claude Code, pi.dev, OpenCode) to drive WhatsApp conversations autonomously by disabling the default ADK response.
+
+1. **Disable ADK** in `config/config.yaml`:
+   ```yaml
+   adk:
+     enabled: false
+   ```
+2. **Start the Gateway**: `./bin/gateway`
+3. **Prompt your Agent**:
+   Give your agent (e.g., Claude Code) the following instruction:
+   > "Monitor WhatsApp messages using `get_recent_messages`. If you see a new request from a user, process it and reply using `send_message`. You can send text and multi-modal media (base64)."
+
+The agent will now act as the "brain" of your WhatsApp account, using the MCP bridge to read and write messages.
+
 ## Simulator & Testing
 
 WhatsADK includes two simulators for testing the gateway flows without a physical device.

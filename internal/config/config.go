@@ -65,6 +65,7 @@ type WhatsAppConfig struct {
 }
 
 type ADKConfig struct {
+	Enabled   bool   `yaml:"enabled"`
 	Endpoint  string `yaml:"endpoint"`
 	AppName   string `yaml:"app_name"`
 	Streaming bool   `yaml:"streaming"`
@@ -134,6 +135,7 @@ func defaultConfig() *Config {
 }
 
 func (c *Config) applyDefaults() {
+	c.ADK.Enabled = true // Enable ADK by default
 	if c.WhatsApp.StoreDSN == "" {
 		c.WhatsApp.StoreDSN = "postgres://localhost:5432/whatsadk?sslmode=disable"
 	}
@@ -188,6 +190,9 @@ func (c *Config) IsUserWhitelisted(userID string) bool {
 }
 
 func (c *Config) applyEnvOverrides() {
+	if v := os.Getenv("ADK_ENABLED"); v != "" {
+		c.ADK.Enabled = v == "true"
+	}
 	if endpoint := os.Getenv("ADK_ENDPOINT"); endpoint != "" {
 		c.ADK.Endpoint = endpoint
 	}
