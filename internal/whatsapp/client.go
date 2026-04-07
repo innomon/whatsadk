@@ -365,7 +365,7 @@ func (c *Client) handleHistorySync(v *events.HistorySync) {
 				// Store as request
 				userID := msg.Info.Sender.User
 				if text != "" {
-					c.storeRequest(ctx, userID, msg.Info.ID, []byte(text), msg.Info.Timestamp, "text/plain")
+					c.storeRequest(ctx, userID, msg.Info.ID, []byte(text), msg.Info.Timestamp, "text/plain", false)
 				}
 				c.processAndStoreMedia(ctx, userID, msg.Info.ID, msg)
 			}
@@ -429,7 +429,7 @@ func (c *Client) handleMessage(msg *events.Message) {
 	// Store the incoming request (text if available)
 	ctx := context.Background()
 	if text != "" {
-		c.storeRequest(ctx, userID, uniqueID, []byte(text), msg.Info.Timestamp, "text/plain")
+		c.storeRequest(ctx, userID, uniqueID, []byte(text), msg.Info.Timestamp, "text/plain", msg.Info.IsFromMe)
 	}
 
 	// Process media and documents
