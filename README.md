@@ -158,6 +158,16 @@ The session is persisted in PostgreSQL. Future runs will reconnect automatically
 5. ADK agent processes message and returns response
 6. Gateway sends response back to user via WhatsApp
 
+### Silent Ignore Message
+
+The ADK agent can instruct the gateway to **not** send a reply to the user while still recording the reason for ignoring the message. This is useful for off-topic queries or when the agent determines no response is necessary.
+
+To trigger a silent ignore, the ADK response should include an `inlineData` part:
+- **mimeType**: `application/x-adk-silent-ignore`
+- **data**: Base64-encoded reason string (e.g., "User is off-topic")
+
+The gateway will log the reason and record it in the `filesys` table as a "response" with an error metadata `Ignored: <reason>`.
+
 ### API Endpoints Used
 
 | Endpoint | Method | Description |

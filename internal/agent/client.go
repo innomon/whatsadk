@@ -16,16 +16,19 @@ import (
 )
 
 type Client struct {
-	endpoint   string
-	appName    string
-	apiKey     string
-	streaming  bool
-	httpClient *http.Client
-	jwtGen     *auth.JWTGenerator
+        endpoint   string
+        appName    string
+        apiKey     string
+        streaming  bool
+        httpClient *http.Client
+        jwtGen     *auth.JWTGenerator
 }
 
-type RunRequest struct {
-	AppName    string   `json:"appName"`
+const (
+        MimeTypeSilentIgnore = "application/x-adk-silent-ignore"
+)
+
+type RunRequest struct {	AppName    string   `json:"appName"`
 	UserID     string   `json:"userId"`
 	SessionID  string   `json:"sessionId"`
 	NewMessage *Message `json:"newMessage"`

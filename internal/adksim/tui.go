@@ -138,9 +138,33 @@ func (m *model) handleCommand(input string) {
 
 	switch cmd {
 	case "help":
-		m.messages = append(m.messages, "Available commands:\n  /attach <path> - Attach a file\n  /clear - Clear screen\n  /help - Show this help")
-	case "clear":
-		m.messages = []string{}
+	        m.messages = append(m.messages, "Available commands:\n  /attach <path> - Attach a file\n  /ignore <reason> - Send a silent ignore message\n  /clear - Clear screen\n  /help - Show this help")
+	case "ignore":
+	        if len(m.pending) == 0 {
+	                m.messages = append(m.messages, lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Render("System: No pending requests to ignore."))
+	                return
+	        }
+	        reason := "Silent ignore from simulator"
+	        if len(args) > 0 {
+	                reason = strings.Join(args, " ")
+	        }
+
+	        req := m.pending[0]
+	        m.pending = m.pending[1:]
+
+	        ignorePart := agent.Part{
+	                InlineData: &agent.InlineData{
+	                        MimeType: agent.MimeTypeSilentIgnore,
+	                        Data:     base64.StdEncoding.EncodeToString([]byte(reason)),
+	                },
+	        }
+
+	        req.ResponseChan <- OutgoingResponse{Parts: []agent.Part{ignorePart}}
+
+	        m.messages = append(m.messages, lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(fmt.Sprintf("🚫 Ignored (Reason: %s)", reason)))
+	        m.viewport.SetContent(strings.Join(m.messages, "\n"))
+	        m.viewport.GotoBottom()
+	case "clear":		m.messages = []string{}
 		m.viewport.SetContent("")
 	case "attach":
 		if len(args) == 0 {
