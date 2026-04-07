@@ -131,6 +131,15 @@ ADK_ENDPOINT=https://my-adk-service.example.com ./bin/gateway
 
 The session is persisted in PostgreSQL. Future runs will reconnect automatically.
 
+## Examples
+
+The project includes several examples in the `examples/` directory to help you get started:
+
+- **[Hello Work](examples/hello)**: A simple deterministic agent that responds to "hello" with its capabilities.
+- **[Ignore Agent (Silent Ignore)](examples/ignore)**: Demonstrates the "Silent Ignore" feature. It only responds to users in a `whitelist.json` file and silently ignores all others, recording the reason in the gateway storage.
+
+To run an example, follow the instructions in its respective `README.md`.
+
 ## How It Works
 
 ```

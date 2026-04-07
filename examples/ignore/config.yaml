@@ -1,0 +1,24 @@
+# Configuration for WhatsApp-ADK Gateway Example
+
+whatsapp:
+  # Connection string for WhatsApp session storage
+  # Default uses postgres user with 'whatsadk' password (matches Docker instructions)
+  store_dsn: "postgres://postgres:whatsadk@localhost:5433/whatsadk?sslmode=disable"
+  log_level: "INFO"
+  
+adk:
+  # The endpoint of the ADK agent API server (started by examples/ignore/main.go)
+  # Note: The adk-go REST server prefixes all app-related routes with /api
+  endpoint: "http://localhost:8080/api"
+  # The name of the agent defined in examples/ignore/main.go
+  app_name: "IgnoreAgent"
+  streaming: false
+
+# Global Blacklist / Verification Store
+verification:
+  database_url: "postgres://postgres:whatsadk@localhost:5433/whatsadk?sslmode=disable"
+
+# Auth is optional for local development unless testing JWT
+# auth:
+#   jwt:
+#     private_key_path: "secrets/jwt_private.pem"
