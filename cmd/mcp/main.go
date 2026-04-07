@@ -376,6 +376,162 @@ func FileSysList(ctx context.Context, s *store.Store, args FileSysListArgs) (*mc
 	}, nil, nil
 }
 
+type RouterGetAppsArgs struct {
+	UserID string `json:"userId"`
+}
+
+func RouterGetApps(ctx context.Context, s *store.Store, args RouterGetAppsArgs) (*mcp.CallToolResult, any, error) {
+	if args.UserID == "" {
+		return nil, nil, fmt.Errorf("userId is required")
+	}
+	path := fmt.Sprintf("router/%s/apps.json", args.UserID)
+	entry, err := s.GetFile(ctx, path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get apps: %w", err)
+	}
+	if entry == nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: "[]",
+				},
+			},
+		}, nil, nil
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: string(entry.Content),
+			},
+		},
+	}, nil, nil
+}
+
+type RouterSetAppsArgs struct {
+	UserID string   `json:"userId"`
+	Apps   []string `json:"apps"`
+}
+
+func RouterSetApps(ctx context.Context, s *store.Store, args RouterSetAppsArgs) (*mcp.CallToolResult, any, error) {
+	if args.UserID == "" {
+		return nil, nil, fmt.Errorf("userId is required")
+	}
+	path := fmt.Sprintf("router/%s/apps.json", args.UserID)
+	data, err := json.Marshal(args.Apps)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to marshal apps: %w", err)
+	}
+	err = s.PutFile(ctx, path, nil, data, time.Now())
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to set apps: %w", err)
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: fmt.Sprintf("Successfully set apps for %s", args.UserID),
+			},
+		},
+	}, nil, nil
+}
+
+type RouterDeleteAppsArgs struct {
+	UserID string `json:"userId"`
+}
+
+func RouterDeleteApps(ctx context.Context, s *store.Store, args RouterDeleteAppsArgs) (*mcp.CallToolResult, any, error) {
+	if args.UserID == "" {
+		return nil, nil, fmt.Errorf("userId is required")
+	}
+	path := fmt.Sprintf("router/%s/apps.json", args.UserID)
+	err := s.DeleteFile(ctx, path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to delete apps: %w", err)
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: fmt.Sprintf("Successfully deleted apps for %s", args.UserID),
+			},
+		},
+	}, nil, nil
+}
+
+type RouterGetStateArgs struct {
+	UserID string `json:"userId"`
+}
+
+func RouterGetState(ctx context.Context, s *store.Store, args RouterGetStateArgs) (*mcp.CallToolResult, any, error) {
+	if args.UserID == "" {
+		return nil, nil, fmt.Errorf("userId is required")
+	}
+	path := fmt.Sprintf("router/%s/state.json", args.UserID)
+	entry, err := s.GetFile(ctx, path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get state: %w", err)
+	}
+	if entry == nil {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{
+					Text: "{}",
+				},
+			},
+		}, nil, nil
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: string(entry.Content),
+			},
+		},
+	}, nil, nil
+}
+
+type RouterSetStateArgs struct {
+	UserID string          `json:"userId"`
+	State  json.RawMessage `json:"state"`
+}
+
+func RouterSetState(ctx context.Context, s *store.Store, args RouterSetStateArgs) (*mcp.CallToolResult, any, error) {
+	if args.UserID == "" {
+		return nil, nil, fmt.Errorf("userId is required")
+	}
+	path := fmt.Sprintf("router/%s/state.json", args.UserID)
+	err := s.PutFile(ctx, path, nil, args.State, time.Now())
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to set state: %w", err)
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: fmt.Sprintf("Successfully set state for %s", args.UserID),
+			},
+		},
+	}, nil, nil
+}
+
+type RouterClearStateArgs struct {
+	UserID string `json:"userId"`
+}
+
+func RouterClearState(ctx context.Context, s *store.Store, args RouterClearStateArgs) (*mcp.CallToolResult, any, error) {
+	if args.UserID == "" {
+		return nil, nil, fmt.Errorf("userId is required")
+	}
+	path := fmt.Sprintf("router/%s/state.json", args.UserID)
+	err := s.DeleteFile(ctx, path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to clear state: %w", err)
+	}
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: fmt.Sprintf("Successfully cleared state for %s", args.UserID),
+			},
+		},
+	}, nil, nil
+}
+
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
@@ -477,6 +633,48 @@ func main() {
 		Description: "List files in the filesys with optional prefix filtering.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args FileSysListArgs) (*mcp.CallToolResult, any, error) {
 		return FileSysList(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "router_get_apps",
+		Description: "Retrieve the list of provisioned apps for a specific user.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args RouterGetAppsArgs) (*mcp.CallToolResult, any, error) {
+		return RouterGetApps(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "router_set_apps",
+		Description: "Provision a list of apps for a specific user.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args RouterSetAppsArgs) (*mcp.CallToolResult, any, error) {
+		return RouterSetApps(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "router_delete_apps",
+		Description: "Remove the list of provisioned apps for a specific user.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args RouterDeleteAppsArgs) (*mcp.CallToolResult, any, error) {
+		return RouterDeleteApps(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "router_get_state",
+		Description: "Retrieve the current routing state (session) for a specific user.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args RouterGetStateArgs) (*mcp.CallToolResult, any, error) {
+		return RouterGetState(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "router_set_state",
+		Description: "Directly update the routing state (session) for a specific user.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args RouterSetStateArgs) (*mcp.CallToolResult, any, error) {
+		return RouterSetState(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "router_clear_state",
+		Description: "Clear the routing state (session) for a specific user.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args RouterClearStateArgs) (*mcp.CallToolResult, any, error) {
+		return RouterClearState(ctx, s, args)
 	})
 
 	transport := &mcp.StdioTransport{}
