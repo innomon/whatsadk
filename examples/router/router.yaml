@@ -12,10 +12,10 @@ apps:
     title: "Shopping Assistant"
 
 classifier:
-  provider: "openai"
-  model: "gpt-4o"
-  endpoint: "https://api.openai.com/v1"
-  api_key: ""
+  provider: "ollama"
+  model: "gemma4:e2b"
+  endpoint: "http://localhost:11434/v1"
+  api_key: "none"
   prompt: "The user said: '${text}'. Which of the following options does this match best? ${optios}. Return the index number (1-N). Return 0 if none match."
   fallback_message: "Sorry, I couldn't identify the application. Please press the number or type the exact title."
 
