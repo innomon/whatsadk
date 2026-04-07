@@ -255,6 +255,127 @@ func GetLogs(ctx context.Context, s *store.Store, args GetLogsArgs) (*mcp.CallTo
 	}, nil, nil
 }
 
+type FileSysSQLSelectArgs struct {
+	Query string `json:"query"`
+}
+
+func FileSysSQLSelect(ctx context.Context, s *store.Store, args FileSysSQLSelectArgs) (*mcp.CallToolResult, any, error) {
+	// Simple security check: must be a SELECT
+	if len(args.Query) < 6 || args.Query[:6] != "SELECT" && args.Query[:6] != "select" {
+		return nil, nil, fmt.Errorf("only SELECT queries are allowed")
+	}
+
+	results, err := s.QueryFilesys(ctx, args.Query)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to execute query: %w", err)
+	}
+
+	data, _ := json.MarshalIndent(results, "", "  ")
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: string(data),
+			},
+		},
+	}, nil, nil
+}
+
+type FileSysPutArgs struct {
+	Path     string          `json:"path"`
+	Metadata json.RawMessage `json:"metadata,omitempty"`
+	Content  string          `json:"content,omitempty"`
+}
+
+func FileSysPut(ctx context.Context, s *store.Store, args FileSysPutArgs) (*mcp.CallToolResult, any, error) {
+	if args.Path == "" {
+		return nil, nil, fmt.Errorf("path is required")
+	}
+
+	err := s.PutFile(ctx, args.Path, args.Metadata, []byte(args.Content), time.Now())
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to put file: %w", err)
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: fmt.Sprintf("Successfully stored entry at %s", args.Path),
+			},
+		},
+	}, nil, nil
+}
+
+type FileSysGetArgs struct {
+	Path string `json:"path"`
+}
+
+func FileSysGet(ctx context.Context, s *store.Store, args FileSysGetArgs) (*mcp.CallToolResult, any, error) {
+	if args.Path == "" {
+		return nil, nil, fmt.Errorf("path is required")
+	}
+
+	entry, err := s.GetFile(ctx, args.Path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get file: %w", err)
+	}
+	if entry == nil {
+		return nil, nil, fmt.Errorf("file not found: %s", args.Path)
+	}
+
+	data, _ := json.MarshalIndent(entry, "", "  ")
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: string(data),
+			},
+		},
+	}, nil, nil
+}
+
+type FileSysDeleteArgs struct {
+	Path string `json:"path"`
+}
+
+func FileSysDelete(ctx context.Context, s *store.Store, args FileSysDeleteArgs) (*mcp.CallToolResult, any, error) {
+	if args.Path == "" {
+		return nil, nil, fmt.Errorf("path is required")
+	}
+
+	err := s.DeleteFile(ctx, args.Path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to delete file: %w", err)
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: fmt.Sprintf("Successfully deleted entry at %s", args.Path),
+			},
+		},
+	}, nil, nil
+}
+
+type FileSysListArgs struct {
+	Prefix string `json:"prefix,omitempty"`
+	Limit  int    `json:"limit,omitempty"`
+}
+
+func FileSysList(ctx context.Context, s *store.Store, args FileSysListArgs) (*mcp.CallToolResult, any, error) {
+	entries, err := s.ListFiles(ctx, args.Prefix, args.Limit)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to list files: %w", err)
+	}
+
+	data, _ := json.MarshalIndent(entries, "", "  ")
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: string(data),
+			},
+		},
+	}, nil, nil
+}
+
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
@@ -321,6 +442,41 @@ func main() {
 		Description: "Send a multi-modal message (text and/or media) to a WhatsApp user",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args SendMessageArgs) (*mcp.CallToolResult, any, error) {
 		return SendMessage(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "filesys_sql_select",
+		Description: "Execute a custom SELECT query on the filesys table for advanced filtering and aggregation.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args FileSysSQLSelectArgs) (*mcp.CallToolResult, any, error) {
+		return FileSysSQLSelect(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "filesys_put",
+		Description: "Create or update a file/entry in the virtual file system.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args FileSysPutArgs) (*mcp.CallToolResult, any, error) {
+		return FileSysPut(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "filesys_get",
+		Description: "Read a file's metadata and content from the filesys.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args FileSysGetArgs) (*mcp.CallToolResult, any, error) {
+		return FileSysGet(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "filesys_delete",
+		Description: "Delete an entry from the filesys.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args FileSysDeleteArgs) (*mcp.CallToolResult, any, error) {
+		return FileSysDelete(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "filesys_list",
+		Description: "List files in the filesys with optional prefix filtering.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args FileSysListArgs) (*mcp.CallToolResult, any, error) {
+		return FileSysList(ctx, s, args)
 	})
 
 	transport := &mcp.StdioTransport{}

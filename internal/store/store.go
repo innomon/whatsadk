@@ -385,3 +385,96 @@ func (s *Store) GetLatestGlobalMessages(ctx context.Context, limit int) ([]FileE
 	}
 	return entries, rows.Err()
 }
+
+func (s *Store) QueryFilesys(ctx context.Context, query string, args ...interface{}) ([]map[string]interface{}, error) {
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
+	var results []map[string]interface{}
+	for rows.Next() {
+		values := make([]interface{}, len(columns))
+		valuePtrs := make([]interface{}, len(columns))
+		for i := range values {
+			valuePtrs[i] = &values[i]
+		}
+
+		if err := rows.Scan(valuePtrs...); err != nil {
+			return nil, err
+		}
+
+		entry := make(map[string]interface{})
+		for i, col := range columns {
+			val := values[i]
+			if b, ok := val.([]byte); ok {
+				// Try to treat as string if it looks like one, or keep as byte array
+				entry[col] = string(b)
+			} else {
+				entry[col] = val
+			}
+		}
+		results = append(results, entry)
+	}
+	return results, rows.Err()
+}
+
+func (s *Store) GetFile(ctx context.Context, path string) (*FileEntry, error) {
+	var e FileEntry
+	err := s.db.QueryRowContext(ctx,
+		"SELECT path, metadata, content, tmstamp FROM filesys WHERE path = $1",
+		path,
+	).Scan(&e.Path, &e.Metadata, &e.Content, &e.Timestamp)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get file: %w", err)
+	}
+	return &e, nil
+}
+
+func (s *Store) DeleteFile(ctx context.Context, path string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM filesys WHERE path = $1", path)
+	if err != nil {
+		return fmt.Errorf("delete file: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) ListFiles(ctx context.Context, prefix string, limit int) ([]FileEntry, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	query := "SELECT path, metadata, content, tmstamp FROM filesys"
+	var args []interface{}
+	if prefix != "" {
+		query += " WHERE path LIKE $1"
+		args = append(args, prefix+"%")
+	}
+	query += " ORDER BY tmstamp DESC LIMIT $" + fmt.Sprint(len(args)+1)
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list files: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []FileEntry
+	for rows.Next() {
+		var e FileEntry
+		if err := rows.Scan(&e.Path, &e.Metadata, &e.Content, &e.Timestamp); err != nil {
+			return nil, fmt.Errorf("scan filesys row: %w", err)
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}

@@ -357,6 +357,12 @@ WhatsADK includes an MCP server that allows AI agents (like Claude Code, Cursor,
 - `blacklist_get_remote`: Fetch the official blocklist from WhatsApp servers.
 - `query_contacts`: Search for WhatsApp contacts by name or JID.
 - `get_message_logs`: Retrieve recent message logs for a specific user.
+- `send_message`: Send multi-modal messages (text/media).
+- `filesys_sql_select`: Execute custom SELECT queries on message logs.
+- `filesys_put`: Create or update entries in the virtual file system.
+- `filesys_get`: Retrieve specific entries by path.
+- `filesys_delete`: Remove entries from the file system.
+- `filesys_list`: List entries with prefix filtering.
 
 ### Configuration for Claude Code / Claude Desktop:
 
