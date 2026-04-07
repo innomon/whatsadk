@@ -30,11 +30,11 @@ make build
 ```
 
 ### 2. Start the Hello Work Agent
-Navigate to the `example` directory and run the agent as a web API server.
+Navigate to the `examples/hello` directory and run the agent as a web API server.
 
 **Standard (Port 8080):**
 ```bash
-cd example
+cd examples/hello
 go run main.go web api
 ```
 
@@ -52,7 +52,7 @@ The agent is now listening. If you used port 8000, it's at `http://localhost:800
 ### 3. Configure and Start the Gateway
 In a new terminal, navigate back to the root directory and run the gateway using the example configuration:
 ```bash
-./bin/gateway -config example/config.yaml
+./bin/gateway -config examples/hello/config.yaml
 ```
 
 ### 4. Link WhatsApp

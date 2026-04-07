@@ -7,10 +7,10 @@ whatsapp:
   log_level: "INFO"
   
 adk:
-  # The endpoint of the ADK agent API server (started by example/main.go)
+  # The endpoint of the ADK agent API server (started by examples/hello/main.go)
   # Note: The adk-go REST server prefixes all app-related routes with /api
   endpoint: "http://localhost:8000/api"
-  # The name of the agent defined in example/main.go
+  # The name of the agent defined in examples/hello/main.go
   app_name: "HelloWorkAgent"
   streaming: false
 
