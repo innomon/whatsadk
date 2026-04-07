@@ -137,6 +137,7 @@ The project includes several examples in the `examples/` directory to help you g
 
 - **[Hello Work](examples/hello)**: A simple deterministic agent that responds to "hello" with its capabilities.
 - **[Ignore Agent (Silent Ignore)](examples/ignore)**: Demonstrates the "Silent Ignore" feature. It only responds to users in a `whitelist.json` file and silently ignores all others, recording the reason in the gateway storage.
+- **[Router Agent](examples/router)**: An intelligent routing agent that forwards messages to downstream ADK applications based on user provisioned apps, featuring multi-app disambiguation using an OpenAI classifier and silent ignore.
 
 To run an example, follow the instructions in its respective `README.md`.
 

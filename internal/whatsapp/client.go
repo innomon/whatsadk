@@ -73,7 +73,7 @@ func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client, verif
 	return client, nil
 }
 
-func (c *Client) storeRequest(ctx context.Context, userID, uniqueID string, content []byte, ts time.Time, mimeType string) {
+func (c *Client) storeRequest(ctx context.Context, userID, uniqueID string, content []byte, ts time.Time, mimeType string, isFromMe bool) {
 	if c.store == nil {
 		return
 	}
@@ -83,7 +83,9 @@ func (c *Client) storeRequest(ctx context.Context, userID, uniqueID string, cont
 	path := fmt.Sprintf("whatsmeow/%s/%s/request", userID, uniqueID)
 	metadata := map[string]interface{}{
 		"mime_type": mimeType,
-		"metadata":  map[string]interface{}{},
+		"metadata":  map[string]interface{}{
+			"is_from_me": isFromMe,
+		},
 	}
 	if err := c.store.PutFile(ctx, path, metadata, content, ts); err != nil {
 		c.log.Errorf("Failed to store request to filesys: %v", err)
@@ -384,7 +386,11 @@ func (c *Client) handleMessage(msg *events.Message) {
 		uniqueID := msg.Info.ID
 		ctx := context.Background()
 		c.storeResponse(ctx, userID, uniqueID, []byte(text), msg.Info.Timestamp, "")
-		return
+		
+		// If message is sent to ourselves (Note to Self), allow it to be processed
+		if c.wac.Store.ID != nil && userID != c.wac.Store.ID.User {
+			return
+		}
 	}
 
 	// Handle LID resolution to phone number (PN)
@@ -526,7 +532,7 @@ func (c *Client) processAndStoreMedia(ctx context.Context, userID, uniqueID stri
 	}
 
 	// Step 3: Store raw media
-	c.storeRequest(ctx, userID, uniqueID, data, msg.Info.Timestamp, mimeType)
+	c.storeRequest(ctx, userID, uniqueID, data, msg.Info.Timestamp, mimeType, msg.Info.IsFromMe)
 
 	// Process media for ADK
 	if c.mediaProc == nil {

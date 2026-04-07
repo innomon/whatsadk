@@ -1,0 +1,23 @@
+default_app: "ignore"
+pgsql_url: "" # e.g. postgres://user:pass@localhost:5432/whatsadk?sslmode=disable
+
+apps:
+  - appName: "admin"
+    a2aURL: "http://localhost:8081"
+    adkAppName: "admin-agent"
+    title: "Admin Tools"
+  - appName: "shopper"
+    a2aURL: "http://localhost:8082"
+    adkAppName: "shopper-agent"
+    title: "Shopping Assistant"
+
+classifier:
+  provider: "openai"
+  model: "gpt-4o"
+  endpoint: "https://api.openai.com/v1"
+  api_key: ""
+  prompt: "The user said: '${text}'. Which of the following options does this match best? ${optios}. Return the index number (1-N). Return 0 if none match."
+  fallback_message: "Sorry, I couldn't identify the application. Please press the number or type the exact title."
+
+prompts:
+  selection: "I found multiple applications for you. Which one would you like to use?\n\n${optios}\n\nPlease reply with a number or name."
