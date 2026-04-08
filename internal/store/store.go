@@ -195,14 +195,30 @@ func (s *Store) WaitForCommand(ctx context.Context, id int64, timeout time.Durat
 }
 
 func (s *Store) PutFile(ctx context.Context, path string, metadata interface{}, content []byte, timestamp time.Time) error {
-	_, err := s.db.ExecContext(ctx,
+	var metadataJSON interface{}
+	var err error
+	if metadata != nil {
+		switch m := metadata.(type) {
+		case []byte:
+			metadataJSON = m
+		case string:
+			metadataJSON = m
+		default:
+			metadataJSON, err = json.Marshal(metadata)
+			if err != nil {
+				return fmt.Errorf("marshal metadata: %w", err)
+			}
+		}
+	}
+
+	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO filesys (path, metadata, content, tmstamp) 
 		 VALUES ($1, $2, $3, $4) 
 		 ON CONFLICT (path) DO UPDATE SET 
 			metadata = EXCLUDED.metadata, 
 			content = EXCLUDED.content, 
 			tmstamp = EXCLUDED.tmstamp`,
-		path, metadata, content, timestamp,
+		path, metadataJSON, content, timestamp,
 	)
 	if err != nil {
 		return fmt.Errorf("put file: %w", err)
