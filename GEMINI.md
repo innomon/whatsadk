@@ -15,6 +15,8 @@ This file contains foundational mandates for Gemini CLI when working on the **Wh
 - **Error Handling**: Never ignore errors with `_`. Handle them explicitly and return early to reduce nesting.
 - **Testing**: Use table-driven tests with `t.Run()`. Tests must reside in the same package as the code they test.
 - **Concurrency**: Use `context.Context` as the first parameter for functions involving cancellation or timeouts.
+- use on postgres database, **DO NOT** use sqilite for this project.
+
 
 ### Architecture & Patterns
 - **Directory Structure**:
