@@ -13,6 +13,20 @@ type Config struct {
 	ADK          ADKConfig          `yaml:"adk"`
 	Auth         AuthConfig         `yaml:"auth"`
 	Verification VerificationConfig `yaml:"verification"`
+	Cron         CronConfig         `yaml:"cron"`
+}
+
+type CronConfig struct {
+	Enabled bool            `yaml:"enabled"`
+	Jobs    []CronJobConfig `yaml:"jobs"`
+}
+
+type CronJobConfig struct {
+	Name     string    `yaml:"name"`
+	Schedule string    `yaml:"schedule"`
+	UserID   string    `yaml:"user_id"`
+	Message  string    `yaml:"message"`
+	Agent    ADKConfig `yaml:"agent,omitempty"`
 }
 
 type VerificationConfig struct {
@@ -225,5 +239,8 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if v := os.Getenv("OAUTH_SPA_URL"); v != "" {
 		c.Auth.OAuth.SPAURL = v
+	}
+	if v := os.Getenv("CRON_ENABLED"); v == "true" {
+		c.Cron.Enabled = true
 	}
 }

@@ -13,6 +13,7 @@ A Go utility that connects WhatsApp via QR code and proxies messages to a remote
 - JWT authentication with RS256 (asymmetric) signing — includes `user_id` and `channel` custom claims
 - **WhatsApp OAuth** — Ed25519/EdDSA-based login flow; SPA users authenticate by sending an AUTH message via WhatsApp deep link and receive a signed JWT for ADK API access
 - **Reverse OTP verification** — apps send a JWT token to the user's WhatsApp; the gateway verifies the sender's phone matches the token's claim and posts a signed callback to confirm identity
+- **Cron Heartbeat Timers** — Periodically execute A2A (Agent-to-Agent) tasks on remote ADK servers with summary-based memory persistence.
 - Configurable via YAML file or environment variables
 
 ## Requirements
@@ -299,9 +300,55 @@ verification:
 
 Each app must register its RSA public key and callback base URL. The backend callback must return `{"otp":"..."}` in the 200 response body.
 
-## Database Management
+## Cron Heartbeat Timers
+
+The gateway can periodically execute tasks on a remote ADK agent (A2A - Agent-to-Agent). Each run maintains a "memory" by retrieving the summary of the previous run and providing it as context to the agent.
+
+Summaries are persisted in the `filesys` table in PostgreSQL under the path `cron/<job_name>/summary`.
+
+### Configuration
+
+```yaml
+cron:
+  enabled: true
+  jobs:
+    - name: "system-check"
+      schedule: "@every 1h"          # Cron-style schedule
+      user_id: "heartbeat-service"   # User ID for the ADK session
+      message: "Verify system health and provide a summary of any issues."
+      agent:                         # Optional: override global ADK config
+        endpoint: "https://monitor.my-adk.app"
+        app_name: "health-monitor"
+```
+
+The `schedule` supports standard cron expressions and descriptors like `@every 5m`, `@hourly`, etc.
+
+## Memory & Persistence
 
 The gateway utilizes PostgreSQL for session storage, contact synchronization, and global blacklisting.
+
+### Memory Implementation
+
+WhatsADK implements two distinct memory patterns depending on the interaction type:
+
+1. **Standard WhatsApp User Memory (Session-based):**
+   - For regular chats, the gateway relies on the **ADK server's native session management**.
+   - Every request uses the user's phone number as both `UserID` and `SessionID`.
+   - The remote ADK server is responsible for maintaining the conversation history.
+   - The gateway logs all interactions in the `filesys` table for auditability, but does not re-inject them into the prompt.
+
+2. **Cron Heartbeat Memory (Summary-based):**
+   - For automated jobs, the gateway uses a **Summary-Injection** pattern.
+   - The final response from a cron job is saved as a "Summary" in the `filesys` table at `cron/<job_name>/summary`.
+   - Before the next run, the gateway retrieves this summary and prepends it to the new message:
+     ```text
+     Previous Run Summary:
+     [Content from last run]
+
+     Task:
+     [New job message]
+     ```
+   - This provides "compressed" continuity across periodic runs without requiring long-lived backend sessions.
 
 ### Contact & Message Storage
 

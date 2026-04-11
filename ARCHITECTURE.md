@@ -52,16 +52,20 @@ whatsadk/
 │   ├── agent/client.go              # ADK HTTP client (REST & SSE modes)
 │   ├── simulator/                   # Logic for the WhatsApp simulator
 │   ├── adksim/                      # Logic for the ADK reverse simulator
-│   ├── auth/
-│   │   ├── claims.go                # JWT custom claims struct (user_id, channel)
-│   │   ├── jwt.go                   # RS256 JWT token generator
-│   │   ├── eddsa.go                 # Ed25519 key loading (PEM/seed)
-│   │   ├── oauth_token.go           # EdDSA JWT generator for OAuth flow
-│   │   ├── oauth_handler.go         # AUTH command parser, rate limiter, deep link builder
-│   │   ├── key_registry.go          # Public key registry for app verification
-│   │   └── verify_token.go          # Verification token detection & validation
-│   └── verification/
-│       └── handler.go               # Reverse OTP verification handler
+├── auth/
+│   ├── claims.go                # JWT custom claims struct (user_id, channel)
+│   ├── jwt.go                   # RS256 JWT token generator
+│   ├── eddsa.go                 # Ed25519 key loading (PEM/seed)
+│   ├── oauth_token.go           # EdDSA JWT generator for OAuth flow
+│   ├── oauth_handler.go         # AUTH command parser, rate limiter, deep link builder
+│   ├── key_registry.go          # Public key registry for app verification
+│   └── verify_token.go          # Verification token detection & validation
+├── cron/
+│   ├── manager.go               # Cron-based job scheduling and execution
+│   └── store.go                 # Summary persistence (filesys table)
+├── verification/
+│   └── handler.go               # Reverse OTP verification handler
+
 ├── config/config.yaml               # Default configuration file
 └── docs/                            # Design docs and reference material
 ```
@@ -171,6 +175,14 @@ The resulting JWT is ~350 characters — compact enough for WhatsApp URL deliver
 
 - `IsVerificationToken()` — quick heuristic check: starts with `eyJ`, has 3 dot-separated parts, and contains the required claims (`mobile`, `app_name`, `callback_url`)
 - `VerifyVerificationToken()` — full cryptographic verification using the app's registered public key
+
+### `internal/cron` — Cron Heartbeats
+
+Manages periodic A2A (Agent-to-Agent) tasks:
+
+- **Scheduling** — uses `robfig/cron/v3` to execute jobs based on cron expressions.
+- **Memory Persistence (`store.go`)** — saves the summary of each run to the `filesys` table (`cron/<job_name>/summary`).
+- **Execution (`manager.go`)** — retrieves the previous summary, injects it into the next agent request, and captures the new response as the next summary.
 
 ### `internal/verification` — Reverse OTP
 
@@ -296,6 +308,22 @@ SPA (Browser)                  WhatsApp User             Gateway                
 - **Verification token validation** — incoming tokens are cryptographically verified against pre-registered app public keys. Phone number matching prevents token forwarding attacks.
 - **Global Blacklist** — users can be globally blocked across the gateway via PostgreSQL. Blocking applies to both phone numbers and their associated LIDs.
 - **Access control** — allows all users by default. If a whitelist is provided, only whitelisted users or Indian (+91) numbers are allowed. LIDs are automatically resolved to phone numbers to ensure they match whitelist/country rules. Non-allowed users receive a rejection message.
+
+## Memory Persistence Patterns
+
+WhatsADK employs two distinct memory strategies depending on the source of the interaction:
+
+### 1. User Session Memory (Backend-Managed)
+For standard WhatsApp users, the gateway acts as a stateless proxy for conversation history:
+- **Session ID:** The user's phone number is used as both the `UserID` and `SessionID` in ADK requests.
+- **State Responsibility:** The remote ADK Agent service is responsible for maintaining the dialogue state and history for that session.
+- **Local Logs:** While the gateway logs all requests/responses in the `filesys` table for auditability and MCP access, it does **not** re-inject these logs into the agent's prompt.
+
+### 2. Cron Heartbeat Memory (Gateway-Managed)
+For automated heartbeat jobs, the gateway manages state transitions locally to ensure continuity across periodic runs:
+- **Summary Storage:** The output of each job is saved as a "Summary" in the `filesys` table at `cron/<job_name>/summary`.
+- **Context Injection:** Before each run, the `CronManager` retrieves the previous summary and prepends it to the job's `message` as a "Previous Run Summary" block.
+- **A2A Continuity:** This pattern allows the agent to maintain context about its own past actions (e.g., "In the last check, I noticed X, so now I will check Y") without needing the ADK backend to maintain a persistent, long-lived session state for the heartbeat user.
 
 ## Build & Test
 

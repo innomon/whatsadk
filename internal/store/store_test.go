@@ -2,14 +2,17 @@ package store
 
 import (
 	"context"
-	"path/filepath"
+	"os"
 	"testing"
 )
 
 func openTestStore(t *testing.T) *Store {
 	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "test_gateway.db")
-	s, err := Open(dbPath)
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL not set, skipping integration test")
+	}
+	s, err := Open(dsn)
 	if err != nil {
 		t.Fatalf("failed to open store: %v", err)
 	}

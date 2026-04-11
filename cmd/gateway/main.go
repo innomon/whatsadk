@@ -12,13 +12,15 @@ import (
 	"github.com/innomon/whatsadk/internal/agent"
 	"github.com/innomon/whatsadk/internal/auth"
 	"github.com/innomon/whatsadk/internal/config"
+	"github.com/innomon/whatsadk/internal/cron"
 	"github.com/innomon/whatsadk/internal/store"
 	"github.com/innomon/whatsadk/internal/verification"
 	"github.com/innomon/whatsadk/internal/whatsapp"
 )
 
 func main() {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -57,42 +59,54 @@ func main() {
 	var gwStore *store.Store
 	var verifyHandler *verification.Handler
 	if cfg.Verification.Enabled {
-	        keyRegistry, err := auth.NewKeyRegistry(cfg.Verification.Apps)
-	        if err != nil {
-	                log.Fatalf("Failed to load verification app keys: %v", err)
-	        }
-	        if jwtGen == nil {
-	                log.Fatalf("Verification requires JWT auth to be enabled (private_key_path must be set)")
-	        }
+		keyRegistry, err := auth.NewKeyRegistry(cfg.Verification.Apps)
+		if err != nil {
+			log.Fatalf("Failed to load verification app keys: %v", err)
+		}
+		if jwtGen == nil {
+			log.Fatalf("Verification requires JWT auth to be enabled (private_key_path must be set)")
+		}
 
-	        gwStore, err = store.Open(cfg.Verification.DatabaseURL)
-	        if err != nil {
-	                log.Fatalf("Failed to open gateway store: %v", err)
-	        }
-	        defer gwStore.Close()
+		gwStore, err = store.Open(cfg.Verification.DatabaseURL)
+		if err != nil {
+			log.Fatalf("Failed to open gateway store: %v", err)
+		}
+		defer gwStore.Close()
 
-	        timeout, _ := time.ParseDuration(cfg.Verification.CallbackTimeout)
-	        if timeout == 0 {
-	                timeout = 10 * time.Second
-	        }
+		timeout, _ := time.ParseDuration(cfg.Verification.CallbackTimeout)
+		if timeout == 0 {
+			timeout = 10 * time.Second
+		}
 
-	        logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	        verifyHandler = verification.NewHandler(
-	                keyRegistry,
-	                jwtGen,
-	                gwStore,
-	                cfg.Verification,
-	                &http.Client{Timeout: timeout},
-	                logger,
-	        )
-	        fmt.Printf("🔑 Verification enabled (%d app(s) registered)\n", len(cfg.Verification.Apps))
+		logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+		verifyHandler = verification.NewHandler(
+			keyRegistry,
+			jwtGen,
+			gwStore,
+			cfg.Verification,
+			&http.Client{Timeout: timeout},
+			logger,
+		)
+		fmt.Printf("🔑 Verification enabled (%d app(s) registered)\n", len(cfg.Verification.Apps))
 	} else {
-	        // Initialize store for global blacklist even if verification is disabled
-	        gwStore, err = store.Open(cfg.Verification.DatabaseURL)
-	        if err != nil {
-	                log.Fatalf("Failed to open gateway store: %v", err)
-	        }
-	        defer gwStore.Close()
+		// Initialize store for global blacklist even if verification is disabled
+		gwStore, err = store.Open(cfg.Verification.DatabaseURL)
+		if err != nil {
+			log.Fatalf("Failed to open gateway store: %v", err)
+		}
+		defer gwStore.Close()
+	}
+
+	// Initialize Cron Heartbeats
+	if cfg.Cron.Enabled {
+		cronStore := cron.NewStore(gwStore)
+		cronManager := cron.NewManager(ctx, cfg, cronStore, jwtGen)
+		if err := cronManager.Start(); err != nil {
+			log.Printf("⚠️ Failed to start cron manager: %v", err)
+		} else {
+			fmt.Printf("⏰ Cron heartbeats enabled (%d job(s) scheduled)\n", len(cfg.Cron.Jobs))
+			defer cronManager.Stop()
+		}
 	}
 
 	var oauthHandler *auth.OAuthHandler
@@ -135,5 +149,5 @@ func main() {
 		log.Fatalf("Gateway error: %v", err)
 	}
 
-	fmt.Println("👋 Gateway stopped")
+	fmt.Println("👋 Gateway stopped.")
 }
