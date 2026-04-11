@@ -16,6 +16,7 @@ This file contains foundational mandates for Gemini CLI when working on the **Wh
 - **Testing**: Use table-driven tests with `t.Run()`. Tests must reside in the same package as the code they test.
 - **Concurrency**: Use `context.Context` as the first parameter for functions involving cancellation or timeouts.
 - use on postgres database, **DO NOT** use sqilite for this project.
+- never use the spf13 library (Cobra/Pflag). Instead, always implement a handcrafted command registry for CLI and slash commands.
 
 
 ### Architecture & Patterns
