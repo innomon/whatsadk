@@ -15,6 +15,8 @@
 - internal/ - Private application code
 - pkg/ - Public library code
 - *_test.go - Test files (same package)
+- use on postgres database, **DO NOT** use sqilite for this project.
+
 
 ## Code Style
 - Follow [Effective Go](https://go.dev/doc/effective_go) and Go Code Review Comments
