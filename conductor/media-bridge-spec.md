@@ -10,6 +10,7 @@ The Media Bridge is a component of the `whatsadk` gateway that intercepts incomi
 | **Image** | JPEG / PNG | **JPEG** (Normalized to 896x896) | `inlineData` (image/jpeg) |
 | **Audio** | **OGG/Opus** | **PCM 16-bit Mono** (16kHz) | `inlineData` (audio/wav) |
 | **Video** | MP4 (H.264) | **Sampled Frames** (1 FPS) | Multiple `inlineData` (image/jpeg) |
+| **Location** | Lat/Lng | **Textual Coordinates** | `text` (normalized string) |
 | **Text** | Plain Text | **UTF-8** | `text` |
 
 ## 3. Functional Requirements

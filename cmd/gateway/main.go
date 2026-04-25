@@ -64,7 +64,7 @@ func main() {
 			log.Fatalf("Failed to load verification app keys: %v", err)
 		}
 		if jwtGen == nil {
-			log.Fatalf("Verification requires JWT auth to be enabled (private_key_path must be set)")
+			log.Fatalf("Verification requires JWT auth to be enabled (private_key_path must be set) ")
 		}
 
 		gwStore, err = store.Open(cfg.Verification.DatabaseURL)

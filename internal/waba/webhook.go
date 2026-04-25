@@ -9,12 +9,14 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/innomon/whatsadk/internal/agent"
 	"github.com/innomon/whatsadk/internal/config"
 )
 
 type WebhookHandler struct {
-	cfg        *config.WABAConfig
-	onMessage  func(sender, text string)
+	cfg            *config.WABAConfig
+	onMessage      func(sender, text string)
+	onMessageParts func(sender string, parts []agent.Part)
 }
 
 func NewWebhookHandler(cfg *config.WABAConfig, onMessage func(sender, text string)) *WebhookHandler {
@@ -22,6 +24,10 @@ func NewWebhookHandler(cfg *config.WABAConfig, onMessage func(sender, text strin
 		cfg:       cfg,
 		onMessage: onMessage,
 	}
+}
+
+func (h *WebhookHandler) SetOnMessageParts(fn func(sender string, parts []agent.Part)) {
+	h.onMessageParts = fn
 }
 
 func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -78,7 +84,12 @@ func (h *WebhookHandler) handleNotification(w http.ResponseWriter, r *http.Reque
 		for _, change := range entry.Changes {
 			if change.Value.Messages != nil {
 				for _, msg := range change.Value.Messages {
-					if msg.Type == "text" && msg.Text != nil {
+					if h.onMessageParts != nil {
+						parts := h.parseMessageParts(msg)
+						if len(parts) > 0 {
+							h.onMessageParts(msg.From, parts)
+						}
+					} else if msg.Type == "text" && msg.Text != nil {
 						h.onMessage(msg.From, msg.Text.Body)
 					}
 				}
@@ -87,6 +98,45 @@ func (h *WebhookHandler) handleNotification(w http.ResponseWriter, r *http.Reque
 	}
 
 	w.WriteHeader(http.StatusOK)
+}
+
+func (h *WebhookHandler) parseMessageParts(msg struct {
+	From      string `json:"from"`
+	ID        string `json:"id"`
+	Timestamp string `json:"timestamp"`
+	Type      string `json:"type"`
+	Text      *struct {
+		Body string `json:"body"`
+	} `json:"text,omitempty"`
+	Image *struct {
+		ID       string `json:"id"`
+		MimeType string `json:"mime_type"`
+		Caption  string `json:"caption,omitempty"`
+	} `json:"image,omitempty"`
+}) []agent.Part {
+	var parts []agent.Part
+	switch msg.Type {
+	case "text":
+		if msg.Text != nil {
+			parts = append(parts, agent.Part{Text: msg.Text.Body})
+		}
+	case "image":
+		if msg.Image != nil {
+			// We send the caption as a text part first
+			if msg.Image.Caption != "" {
+				parts = append(parts, agent.Part{Text: msg.Image.Caption})
+			}
+			// We send a special part containing the Media ID
+			// The main loop in waba-gateway will handle downloading this
+			parts = append(parts, agent.Part{
+				InlineData: &agent.InlineData{
+					MimeType: msg.Image.MimeType,
+					Data:     "media_id:" + msg.Image.ID, // Custom protocol to communicate with gateway
+				},
+			})
+		}
+	}
+	return parts
 }
 
 func (h *WebhookHandler) validateSignature(payload []byte, signature string) bool {
@@ -122,6 +172,11 @@ type WebhookPayload struct {
 					Text      *struct {
 						Body string `json:"body"`
 					} `json:"text,omitempty"`
+					Image *struct {
+						ID       string `json:"id"`
+						MimeType string `json:"mime_type"`
+						Caption  string `json:"caption,omitempty"`
+					} `json:"image,omitempty"`
 				} `json:"messages"`
 			} `json:"value"`
 			Field string `json:"field"`

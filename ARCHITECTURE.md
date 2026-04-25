@@ -124,9 +124,14 @@ Wraps the [whatsmeow](https://github.com/tulir/whatsmeow) library and provides m
 
 - **QR code authentication** — displays QR in terminal on first run
 - **Persistent sessions** — stored in PostgreSQL via `sqlstore`
-- **Two-Way Media Bridge (`media.go`)** — Normalizes media between WhatsApp and ADK:
-    - **Inbound (WA ➔ ADK):** Images (JPEG 896px), Audio (16kHz Mono WAV), Video (1 FPS sampling).
-    - **Outbound (ADK ➔ WA):** Uploads media parts from ADK to WhatsApp servers and sends them as native WhatsApp messages (Image, Audio, Video, Document).
+- **Two-Way Media Bridge (`media.go`)** — Normalizes media and metadata between WhatsApp and ADK:
+    - **Normalization Layer:** Transforms platform-specific formats into a unified ADK standard (`agent.Part`).
+    - **Inbound (WA ➔ ADK):** 
+        - **Images:** Automatically resized and normalized to **896x896 JPEG**. 
+        - **Audio:** Converted to **16kHz Mono WAV**.
+        - **Video:** Sampled at **1 FPS** into JPEG frames.
+        - **Location:** Standardized as a **Text Part** (e.g., `Location: [lat, lng]`) to ensure compatibility with LLM text reasoning.
+    - **Outbound (ADK ➔ WA):** Uploads media parts from ADK to WhatsApp servers and sends them as native WhatsApp messages (Image, Audio, Video, Document). Text parts are sent as standard conversation messages.
 - **Message event handling** — routes incoming messages through a pipeline:
   1. Ignores messages from self and group chats
   2. Extracts text from conversation or extended text messages
@@ -217,22 +222,18 @@ Simulates the **Gateway ➔ ADK** flow. It acts as the ADK server, listening for
 ```
 WhatsApp User
     │
-    ▼ (message via whatsmeow WebSocket)
-whatsapp.Client.handleMessage()
+    ▼ (WebSocket for Multi-Device / Webhook for WABA)
+whatsapp.Client.handleMessage() or waba.WebhookHandler.onMessageParts()
     │
-    ├─ Skip: from self, group chat, empty text
+    ├─ Skip: from self, group chat, empty text (if applicable)
     │
     ├─ Check: Is user blacklisted? (PostgreSQL)
     │
-    ├─ Resolve: If LID, attempt resolution to PN (Cache/Lookup)
-    │
-    ├─ Check: Is it a verification token? → verification.Handler
-    │
-    ├─ Check: Is it an AUTH command? → auth.OAuthHandler (EdDSA JWT → deep link)
+    ├─ Resolve: If LID, attempt resolution to PN (Cache/Lookup - Multi-Device only)
     │
     ├─ Check: Is user allowed? (whitelist / allow-all fallback)
     │
-    ├─ Media Bridge: Process and normalize media/documents
+    ├─ Normalization Layer: Process images (896px JPEG), audio, video, location
     │
     ▼
 agent.Client.ChatParts()
@@ -247,7 +248,7 @@ agent.Client.ChatParts()
 extractFinalParts() → all parts (text + inlineData) from model message
     │
     ▼
-whatsapp.Client → sendADKParts() back to user
+Gateway Client → sendADKParts() back to user (Multi-Device or WABA)
 ```
 
 ### Reverse OTP Verification Flow
