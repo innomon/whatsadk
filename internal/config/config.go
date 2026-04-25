@@ -4,16 +4,28 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
 	WhatsApp     WhatsAppConfig     `yaml:"whatsapp"`
+	WABA         WABAConfig         `yaml:"waba"`
 	ADK          ADKConfig          `yaml:"adk"`
 	Auth         AuthConfig         `yaml:"auth"`
 	Verification VerificationConfig `yaml:"verification"`
 	Cron         CronConfig         `yaml:"cron"`
+}
+
+type WABAConfig struct {
+	Enabled           bool   `yaml:"enabled"`
+	Port              int    `yaml:"port"` // Webhook listener port
+	AppSecret         string `yaml:"app_secret"`
+	VerifyToken       string `yaml:"verify_token"`
+	AccessToken       string `yaml:"access_token"`
+	PhoneNumberID     string `yaml:"phone_number_id"`
+	BusinessAccountID string `yaml:"business_account_id"`
 }
 
 type CronConfig struct {
@@ -156,6 +168,9 @@ func (c *Config) applyDefaults() {
 	if c.WhatsApp.LogLevel == "" {
 		c.WhatsApp.LogLevel = "INFO"
 	}
+	if c.WABA.Port == 0 {
+		c.WABA.Port = 8081
+	}
 	if c.ADK.Endpoint == "" {
 		c.ADK.Endpoint = "http://localhost:8000/api"
 	}
@@ -215,6 +230,29 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if apiKey := os.Getenv("ADK_API_KEY"); apiKey != "" {
 		c.ADK.APIKey = apiKey
+	}
+	if v := os.Getenv("WABA_ENABLED"); v != "" {
+		c.WABA.Enabled = v == "true"
+	}
+	if v := os.Getenv("WABA_PORT"); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			c.WABA.Port = i
+		}
+	}
+	if v := os.Getenv("WABA_APP_SECRET"); v != "" {
+		c.WABA.AppSecret = v
+	}
+	if v := os.Getenv("WABA_VERIFY_TOKEN"); v != "" {
+		c.WABA.VerifyToken = v
+	}
+	if v := os.Getenv("WABA_ACCESS_TOKEN"); v != "" {
+		c.WABA.AccessToken = v
+	}
+	if v := os.Getenv("WABA_PHONE_NUMBER_ID"); v != "" {
+		c.WABA.PhoneNumberID = v
+	}
+	if v := os.Getenv("WABA_BUSINESS_ACCOUNT_ID"); v != "" {
+		c.WABA.BusinessAccountID = v
 	}
 	if keyPath := os.Getenv("AUTH_JWT_PRIVATE_KEY_PATH"); keyPath != "" {
 		c.Auth.JWT.PrivateKeyPath = keyPath

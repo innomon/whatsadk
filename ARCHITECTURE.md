@@ -13,14 +13,14 @@ This document describes the architecture of **WhatsADK**, a Go gateway that brid
                                                ▼ MCP (stdio)
 ┌──────────────┐          ┌──────────────────────────────┐          ┌───────────────┐
 │  WhatsApp    │◀────────▶│        WhatsADK Gateway      │────────▶│  ADK Agent    │
-│  Users       │  whatsmeow│                              │  HTTP   │  Service      │
+│  Users       │  whatsmeow│      (Multi-Device or WABA)  │  HTTP   │  Service      │
 │              │  (WebSocket)│  ┌────────┐  ┌───────────┐ │  REST   │  (Remote)     │
 └──────────────┘          │  │PostgreSQL│  │ JWT Auth  │ │  /SSE   └───────────────┘
-                          │  │ Session  │  │ (RS256)   │ │
-                          │  └────┬───┘  └───────────┘ │
-                          │       │      ┌──────────────┐      │          ┌───────────────┐
-                          │       │      │ Verification │──────│─────────▶│  3rd-Party    │
-                          │       │      │ Handler      │      │ Callback │  Apps         │
+     or                   │  │ Session  │  │ (RS256)   │ │
+┌──────────────┐          │  └────┬───┘  └───────────┘ │
+│ Meta Cloud   │◀────────▶│       │      ┌──────────────┐      │          ┌───────────────┐
+│ API (WABA)   │  HTTPS   │       │      │ Verification │──────│─────────▶│  3rd-Party    │
+└──────────────┘ Webhook  │       │      │ Handler      │      │ Callback │  Apps         │
                           │       │      └──────────────┘      │          └───────────────┘
                           └───────┼──────────────────────┘
                                   │
@@ -30,7 +30,11 @@ This document describes the architecture of **WhatsADK**, a Go gateway that brid
                           └────────────────┘
 ```
 
-The gateway is a single long-running process that connects to WhatsApp via the whatsmeow library, listens for incoming messages, and proxies them to a remote ADK agent over HTTP. Responses from the agent are relayed back to the WhatsApp user.
+The gateway provides two entry points for WhatsApp connectivity:
+1. **Multi-Device Gateway (`cmd/gateway`)**: Uses the unofficial `whatsmeow` library. It connects via WebSocket and supports QR-code based authentication.
+2. **WABA Gateway (`cmd/waba-gateway`)**: Uses the official Meta WhatsApp Business Cloud API. It receives messages via HTTP webhooks and sends replies via the Meta Graph API.
+
+Both gateways proxy messages to a remote ADK agent over HTTP. Responses from the agent are relayed back to the WhatsApp user.
 
 The **MCP Server** is a secondary entry point that allows local AI agents to query the gateway's state (contacts, logs, blacklist) directly via the Model Context Protocol.
 
@@ -39,16 +43,16 @@ The **MCP Server** is a secondary entry point that allows local AI agents to que
 ```
 whatsadk/
 ├── cmd/
-│   ├── gateway/main.go              # Application entry point & dependency wiring
+│   ├── gateway/main.go              # Multi-Device Gateway entry point
+│   ├── waba-gateway/main.go         # WABA Cloud API Gateway entry point
 │   ├── keygen/main.go               # Ed25519 key pair generator for OAuth
 │   ├── mcp/main.go                  # MCP Server for agentic tool access
 │   ├── simulator/main.go            # WhatsApp TUI simulator
 │   └── adksim/main.go               # ADK Reverse TUI simulator
 ├── internal/
 │   ├── config/config.go             # YAML configuration loader with env overrides
-│   ├── whatsapp/
-│   │   ├── client.go                # WhatsApp client, QR auth, message routing
-│   │   └── media.go                 # Media Bridge processor (ffmpeg, resizing)
+│   ├── whatsapp/                    # whatsmeow (Multi-Device) client logic
+│   ├── waba/                        # WABA (Official Cloud API) client logic
 │   ├── agent/client.go              # ADK HTTP client (REST & SSE modes)
 │   ├── simulator/                   # Logic for the WhatsApp simulator
 │   ├── adksim/                      # Logic for the ADK reverse simulator

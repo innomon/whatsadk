@@ -2,6 +2,7 @@
 
 # Binary names
 BINARY_GATEWAY=gateway
+BINARY_WABA=waba-gateway
 BINARY_KEYGEN=keygen
 BINARY_MCP=whatsadk-mcp
 BINARY_SIMULATOR=simulator
@@ -23,6 +24,7 @@ all: build
 build:
 	@mkdir -p $(BIN_DIR)
 	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_GATEWAY) ./$(CMD_DIR)/gateway
+	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_WABA) ./$(CMD_DIR)/waba-gateway
 	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_KEYGEN) ./$(CMD_DIR)/keygen
 	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_MCP) ./$(CMD_DIR)/mcp
 	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_SIMULATOR) ./$(CMD_DIR)/simulator

@@ -58,6 +58,12 @@ make build
 | `VERIFICATION_CALLBACK_TIMEOUT` | No | Timeout for verification callback HTTP requests (default: `10s`) |
 | `WHATSAPP_STORE_DSN` | No | PostgreSQL connection string for WhatsApp session storage |
 | `VERIFICATION_DATABASE_URL` | No | PostgreSQL connection string for blacklist store |
+| `WABA_ENABLED` | No | Enable official WABA gateway (`true`) |
+| `WABA_PORT` | No | Port for WABA webhook listener (default: `8081`) |
+| `WABA_VERIFY_TOKEN` | No | Meta Webhook Verify Token |
+| `WABA_ACCESS_TOKEN` | No | Meta Graph API Access Token |
+| `WABA_PHONE_NUMBER_ID` | No | Meta Phone Number ID |
+| `WABA_APP_SECRET` | No | Meta App Secret for signature validation |
 | `CONFIG_FILE` | No | Path to config file |
 
 ### Config File
