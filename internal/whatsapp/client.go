@@ -43,7 +43,8 @@ type Client struct {
 }
 
 func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client, verifyHandler *verification.Handler, oauthHandler *auth.OAuthHandler, store *store.Store) (*Client, error) {
-	log := waLog.Stdout("WhatsApp", cfg.WhatsApp.LogLevel, true)
+	rawLog := waLog.Stdout("WhatsApp", cfg.WhatsApp.LogLevel, true)
+	log := NewFilteredLogger(rawLog, "")
 
 	container, err := sqlstore.New(ctx, "postgres", cfg.WhatsApp.StoreDSN, log)
 	if err != nil {
