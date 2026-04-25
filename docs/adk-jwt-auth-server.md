@@ -2,6 +2,12 @@
 
 This document describes how to implement RS256 JWT verification on the ADK Go agent server to authenticate requests from the WhatsADK gateway.
 
+## Algorithm & Rationale
+
+- **Algorithm:** RS256 (RSA with SHA-256).
+- **Rationale:** RS256 is used for **System-to-System Authentication** (Gateway to ADK Server). It is the industry standard for JWT signing, ensuring broad compatibility with standard libraries across different languages (Go, Python, etc.) used to implement ADK agents and callback receivers.
+- **Comparison:** Unlike the **EdDSA** used for WhatsApp OAuth (which prioritizes compact token size for mobile delivery), RS256 prioritizes ecosystem compatibility for backend services where token size is less constrained.
+
 ## Token Format
 
 The gateway sends an `Authorization: Bearer <token>` header on every request to `/run`, `/run_sse`, and session endpoints.

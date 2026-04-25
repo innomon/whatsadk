@@ -306,8 +306,16 @@ SPA (Browser)                  WhatsApp User             Gateway                
 
 ## Security Model
 
+### Algorithm Selection Rationale
+The project uses two distinct cryptographic standards to balance industry compatibility with mobile performance:
+
+- **RS256 (RSA-2048)** is used for **System-to-System Auth**. It is the standard for service-to-service communication, ensuring the Gateway can authenticate with ADK servers and 3rd-party callbacks using widely supported libraries.
+- **EdDSA (Ed25519)** is used for **User-to-System OAuth**. It provides significantly smaller keys (32B) and signatures, resulting in compact JWTs (~350 chars) that fit easily within WhatsApp deep-links and mobile intent handlers, where RSA tokens (~800+ chars) would be unwieldy.
+
+### Security Features
 - **JWT Auth (RS256)** — asymmetric signing ensures the ADK service can verify requests without sharing the private key. Tokens are short-lived (default 2 minutes).
-- **OAuth (EdDSA)** — Ed25519-signed JWTs (~350 chars) for WhatsApp deep-link delivery. The JWT binds the user's phone number to the SPA's ephemeral public key. Rate-limited to 5 AUTH requests per phone per hour.
+- **OAuth (EdDSA)** — Ed25519-signed JWTs for WhatsApp deep-link delivery. The JWT binds the user's phone number to the SPA's ephemeral public key. Rate-limited to 5 AUTH requests per phone per hour.
+- **TOTP Binding** — The Ed25519 public key is bound to the TOTP generation process, ensuring that codes are valid only when presented alongside the specific device key used during OAuth.
 - **API Key fallback** — when JWT is not configured, a static API key can be used (less secure, suitable for development).
 - **Verification token validation** — incoming tokens are cryptographically verified against pre-registered app public keys. Phone number matching prevents token forwarding attacks.
 - **Global Blacklist** — users can be globally blocked across the gateway via PostgreSQL. Blocking applies to both phone numbers and their associated LIDs.

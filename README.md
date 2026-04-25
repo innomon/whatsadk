@@ -195,7 +195,9 @@ The gateway will log the reason and record it in the `filesys` table as a "respo
 
 ## JWT Authentication
 
-The gateway supports RS256 (asymmetric) JWT authentication for requests to the ADK service. When enabled, each request includes a short-lived Bearer token with custom claims:
+The gateway supports **RS256 (asymmetric)** JWT authentication for requests to the ADK service. RS256 is the industry standard for service-to-service communication, ensuring broad compatibility with standard libraries.
+
+When enabled, each request includes a short-lived Bearer token with custom claims:
 
 - `user_id` — the WhatsApp sender's phone number
 - `channel` — always `"whatsapp"`
@@ -226,7 +228,7 @@ For the ADK Go server-side verification implementation, see [docs/adk-jwt-auth-s
 
 ## WhatsApp OAuth (EdDSA)
 
-The gateway can act as an Identity Provider, allowing SPA users to authenticate via WhatsApp. The flow uses Ed25519/EdDSA-signed JWTs for compact tokens (~350 chars) suitable for delivery via WhatsApp deep links.
+The gateway can act as an Identity Provider, allowing SPA users to authenticate via WhatsApp. This flow uses **Ed25519/EdDSA** for signing because it produces significantly more compact tokens (~350 characters) than RSA. These compact tokens are required to fit within WhatsApp messages and mobile deep-link URLs without being truncated.
 
 **How it works:**
 1. SPA generates an Ed25519 key pair and a nonce, then opens a `wa.me` deep link: `AUTH <pubkey> <nonce>`

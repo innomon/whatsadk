@@ -2,6 +2,12 @@
 
 
 
+### Algorithm & Rationale
+
+- **EdDSA (Ed25519):** Chosen for the OAuth and TOTP binding flow.
+- **Rationale:** Ed25519 signatures and keys are significantly more compact than RSA. This ensures that the resulting JWTs are small (~350 characters), making them ideal for delivery via WhatsApp messages and mobile deep-link URLs. Using RS256 here would result in tokens exceeding 800 characters, which are often truncated or blocked by mobile OS intent handlers.
+- **Binding:** The Ed25519 public key is included in the HMAC input to cryptographically bind the TOTP code to the specific device key pair generated during the WhatsApp OAuth flow.
+
 ### TOTP example
 
 - Uses a **per-user random secret** (32 bytes) instead of the Ed25519 public key as the HMAC key  
