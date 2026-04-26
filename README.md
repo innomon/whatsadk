@@ -437,7 +437,7 @@ docker exec -i whatsadk-db psql -U postgres -d <database_name> -c "SELECT * FROM
 
 ## Model Context Protocol (MCP)
 
-WhatsADK includes an MCP server that allows AI agents (like Claude Code, Cursor, and OpenCode) to interact with your WhatsApp contacts and blacklist directly.
+WhatsADK includes an MCP server that allows AI agents (like Claude Code, Cursor, and OpenCode) to interact with your WhatsApp contacts and blacklist directly. See [cmd/mcp/AGENT.md](cmd/mcp/AGENT.md) for detailed configuration and installation guides for different agents.
 
 ### Tools Available:
 - `blacklist_add`: Block a phone number/JID (Local Shadow Ban + Remote WhatsApp Block).

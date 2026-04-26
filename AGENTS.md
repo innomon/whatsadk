@@ -34,3 +34,7 @@ check the env var CONFIG_FILE, if not present search for the config file in cure
 ## Code Reference
 - Use [whatsapp go client](https://github.com/tulir/whatsmeow) to connect to whatsapp
 - Use [ADK go SDK](https://github.com/google/adk-go) to connect with agents
+
+## MCP Server
+WhatsADK includes an MCP (Model Context Protocol) server to allow AI agents to interact with WhatsApp. 
+For detailed installation and tool references, see [cmd/mcp/AGENT.md](cmd/mcp/AGENT.md).
