@@ -18,10 +18,13 @@ import (
 	"github.com/innomon/whatsadk/internal/agent"
 	"github.com/innomon/whatsadk/internal/config"
 	"github.com/innomon/whatsadk/internal/store"
+	agenticconfig "github.com/innomon/agentic/pkg/config"
+	"github.com/innomon/agentic/pkg/registry"
 	adkagent "google.golang.org/adk/agent"
 	"google.golang.org/adk/cmd/launcher"
 	"google.golang.org/adk/cmd/launcher/full"
 	"google.golang.org/adk/model"
+	"google.golang.org/adk/runner"
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
 	"gopkg.in/yaml.v3"
@@ -36,10 +39,67 @@ type RouterConfig struct {
 }
 
 type AppConfig struct {
-	AppName    string `yaml:"appName"`
-	A2AURL     string `yaml:"a2aURL"`
-	ADKAppName string `yaml:"adkAppName"`
-	Title      string `yaml:"title"`
+	AppName       string `yaml:"appName"`
+	A2AURL        string `yaml:"a2aURL"`
+	ADKAppName    string `yaml:"adkAppName"`
+	AgenticConfig string `yaml:"agenticConfig"`
+	Title         string `yaml:"title"`
+}
+
+type RunnerManager struct {
+	runners map[string]*runner.Runner
+}
+
+func NewRunnerManager() *RunnerManager {
+	return &RunnerManager{
+		runners: make(map[string]*runner.Runner),
+	}
+}
+
+func (rm *RunnerManager) Init(ctx context.Context, apps []AppConfig) error {
+	for _, app := range apps {
+		if app.AgenticConfig == "" {
+			continue
+		}
+
+		fmt.Printf("📦 Loading in-process agent for %s from %s\n", app.AppName, app.AgenticConfig)
+		agenticCfg, err := agenticconfig.Load(app.AgenticConfig)
+		if err != nil {
+			log.Printf("Warning: failed to load agentic config for %s: %v", app.AppName, err)
+			continue
+		}
+
+		reg := registry.New(agenticCfg)
+		lc, err := reg.BuildLauncherConfig(ctx)
+		if err != nil {
+			log.Printf("Warning: failed to build launcher config for %s: %v", app.AppName, err)
+			continue
+		}
+
+		ag, err := registry.Get[adkagent.Agent](ctx, reg, app.ADKAppName)
+		if err != nil {
+			log.Printf("Warning: failed to load agent %s: %v", app.ADKAppName, err)
+			continue
+		}
+
+		r, err := runner.New(runner.Config{
+			AppName:        app.ADKAppName,
+			Agent:          ag,
+			SessionService: lc.SessionService,
+		})
+		if err != nil {
+			log.Printf("Warning: failed to create runner for agent %s: %v", app.ADKAppName, err)
+			continue
+		}
+		rm.runners[app.AppName] = r
+		fmt.Printf("✅ Registered local agent: %s\n", app.AppName)
+	}
+	return nil
+}
+
+func (rm *RunnerManager) Get(appName string) (*runner.Runner, bool) {
+	r, ok := rm.runners[appName]
+	return r, ok
 }
 
 type ClassifierConfig struct {
@@ -56,8 +116,9 @@ type PromptsConfig struct {
 }
 
 var (
-	cfg     RouterConfig
-	dbStore *store.Store
+	cfg           RouterConfig
+	dbStore       *store.Store
+	runnerManager *RunnerManager
 )
 
 func loadConfig() {
@@ -80,6 +141,11 @@ func main() {
 		log.Fatalf("failed to open store: %v", err)
 	}
 	defer dbStore.Close()
+
+	runnerManager = NewRunnerManager()
+	if err := runnerManager.Init(ctx, cfg.Apps); err != nil {
+		log.Fatalf("failed to initialize runner manager: %v", err)
+	}
 
 	routerAgent, err := adkagent.New(adkagent.Config{
 		Name:        "RouterAgent",
@@ -224,6 +290,32 @@ func routerRun(invCtx adkagent.InvocationContext) iter.Seq2[*session.Event, erro
 		app := findApp(targetApp)
 		if app == nil {
 			yield(makeResponse(invCtx, "Target application not found: "+targetApp), nil)
+			return
+		}
+
+		if rnr, ok := runnerManager.Get(targetApp); ok {
+			// Re-use session ID from router session
+			sessionID := invCtx.Session().ID()
+			
+			// Prepare message for the in-process runner
+			msg := &genai.Content{
+				Role:  "user",
+				Parts: invCtx.UserContent().Parts,
+			}
+
+			// Execute in-process
+			events := rnr.Run(ctx, userID, sessionID, msg, adkagent.RunConfig{})
+			for ev, err := range events {
+				if err != nil {
+					yield(nil, err)
+					return
+				}
+				// We need to ensure InvocationID matches if needed, 
+				// but session.Event already has its own ID.
+				if !yield(ev, nil) {
+					return
+				}
+			}
 			return
 		}
 

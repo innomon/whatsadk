@@ -1,0 +1,16 @@
+root_agent: shopper-agent
+
+models:
+  gemini-flash:
+    provider: gemini
+    model_id: gemini-2.0-flash-exp
+    default: true
+
+agents:
+  shopper-agent:
+    description: A simple shopping assistant.
+    model: gemini-flash
+    instruction: |
+      You are a shopping assistant. 
+      Help the user find products they need.
+      Be helpful and concise.

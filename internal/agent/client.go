@@ -16,19 +16,20 @@ import (
 )
 
 type Client struct {
-        endpoint   string
-        appName    string
-        apiKey     string
-        streaming  bool
-        httpClient *http.Client
-        jwtGen     *auth.JWTGenerator
+	endpoint   string
+	appName    string
+	apiKey     string
+	streaming  bool
+	httpClient *http.Client
+	jwtGen     *auth.JWTGenerator
 }
 
 const (
-        MimeTypeSilentIgnore = "application/x-adk-silent-ignore"
+	MimeTypeSilentIgnore = "application/x-adk-silent-ignore"
 )
 
-type RunRequest struct {	AppName    string   `json:"appName"`
+type RunRequest struct {
+	AppName    string   `json:"appName"`
 	UserID     string   `json:"userId"`
 	SessionID  string   `json:"sessionId"`
 	NewMessage *Message `json:"newMessage"`
@@ -273,4 +274,3 @@ func extractFinalParts(events []Event) []Part {
 
 	return allParts
 }
-

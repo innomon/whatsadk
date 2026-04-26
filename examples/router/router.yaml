@@ -7,7 +7,7 @@ apps:
     adkAppName: "admin-agent"
     title: "Admin Tools"
   - appName: "shopper"
-    a2aURL: "http://localhost:8082"
+    agenticConfig: "shopper-agentic.yaml"
     adkAppName: "shopper-agent"
     title: "Shopping Assistant"
 
