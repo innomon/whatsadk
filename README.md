@@ -1,23 +1,25 @@
 # WhatsADK - WhatsApp to ADK Gateway
 
-A Go utility that connects WhatsApp via QR code and proxies messages to a remote ADK Agent service.
+A high-performance Go gateway that connects WhatsApp to remote ADK Agent services. It supports two modes of operation: **QR Code (Multi-Device)** for personal/business accounts and **Official WABA (WhatsApp Business API)** for enterprise scale.
 
 ## Features
 
-- Connect to WhatsApp using QR code scanning
-- Persistent WhatsApp session storage (PostgreSQL)
-- Proxy incoming WhatsApp messages to remote ADK Agent
-- **Two-Way Media Bridge** — Automatically intercept, transform, and forward WhatsApp media to the ADK agent.
+- **Dual Mode Connectivity:**
+    - **QR Code Mode:** Link any WhatsApp account by scanning a QR code (built on `whatsmeow`).
+    - **WABA Mode:** Connect via the official WhatsApp Business Cloud API with webhook support.
+- **Persistent Storage:** WhatsApp sessions, contacts, and message logs are stored in PostgreSQL.
+- **Two-Way Media Bridge:** Automatically intercept, transform, and forward WhatsApp media (images, audio, video) to the ADK agent.
     - **Normalization:** Images are normalized to **896x896 JPEG**; audio is converted to **16kHz Mono WAV**.
     - **Location:** Native location shares are standardized as **Text Parts** (`Location: [lat, lng]`) for the agent.
     - **Outbound:** Supports sending media back from the agent to the WhatsApp user.
-- Support for both `/run` (single response) and `/run_sse` (streaming) endpoints
-- Per-user session management on the ADK service
-- JWT authentication with RS256 (asymmetric) signing — includes `user_id` and `channel` custom claims
-- **WhatsApp OAuth** — Ed25519/EdDSA-based login flow; SPA users authenticate by sending an AUTH message via WhatsApp deep link and receive a signed JWT for ADK API access
-- **Reverse OTP verification** — apps send a JWT token to the user's WhatsApp; the gateway verifies the sender's phone matches the token's claim and posts a signed callback to confirm identity
-- **Cron Heartbeat Timers** — Periodically execute A2A (Agent-to-Agent) tasks on remote ADK servers with summary-based memory persistence.
-- Configurable via YAML file or environment variables
+- **Agent Interaction:** Support for both `/run` (single response) and `/run_sse` (streaming) endpoints.
+- **Security:**
+    - JWT authentication with RS256 (asymmetric) signing.
+    - **WhatsApp OAuth:** Ed25519/EdDSA-based login flow for SPAs.
+    - **Reverse OTP Verification:** Verify phone numbers via incoming WhatsApp tokens and signed callbacks.
+- **Cron Heartbeat Timers:** Periodically execute A2A (Agent-to-Agent) tasks with summary-based memory.
+- **MCP Server:** Model Context Protocol support for agentic control of WhatsApp (blacklist, contacts, messaging).
+- **Extensive Tooling:** Includes simulators for both WhatsApp and ADK interfaces for rapid testing.
 
 ## Requirements
 
@@ -29,6 +31,22 @@ A Go utility that connects WhatsApp via QR code and proxies messages to a remote
   - **Windows:** `choco install ffmpeg` or download from [ffmpeg.org](https://ffmpeg.org/download.html)
 - Running ADK Agent service (local or remote)
 
+## Gateway Modes
+
+The project provides two separate binaries depending on how you want to connect to WhatsApp:
+
+### 1. QR Code Mode (Standard)
+- **Binary:** `bin/gateway`
+- **Mechanism:** Uses a virtual "Linked Device" via the `whatsmeow` library.
+- **Setup:** Scan a QR code in the terminal with your phone.
+- **Best For:** Individual users, small businesses, and testing with existing personal/business accounts.
+
+### 2. WABA Mode (Official API)
+- **Binary:** `bin/waba-gateway`
+- **Mechanism:** Uses the official Meta WhatsApp Business Cloud API.
+- **Setup:** Requires a Meta Developer App, Phone Number ID, and a publicly accessible Webhook URL.
+- **Best For:** High-volume enterprise applications, official verified business profiles, and production-grade bots.
+
 ## Installation
 
 The project uses a `Makefile` to manage builds. All binaries are generated in the `bin/` directory.
@@ -38,10 +56,11 @@ The project uses a `Makefile` to manage builds. All binaries are generated in th
 make build
 
 # The binaries will be available in:
-# bin/gateway
-# bin/keygen
-# bin/simulator
-# bin/adksim
+# bin/gateway       (QR Code Mode)
+# bin/waba-gateway  (Official WABA Mode)
+# bin/keygen        (Security tool)
+# bin/simulator     (WhatsApp TUI simulator)
+# bin/adksim        (ADK Agent TUI simulator)
 ```
 
 ## Configuration
@@ -110,36 +129,27 @@ First, ensure your ADK agent is running. For example:
 # Python
 adk api_server
 
-# Go
-go run agent.go web api
-
 # Or connect to a remote ADK Studio instance
 ```
 
 ### 2. Run the Gateway
 
+#### Option A: QR Code Mode (Standard)
 ```bash
 # With default config (localhost:8000)
 ./bin/gateway
 
-# With custom endpoint
-ADK_ENDPOINT=https://my-adk-service.example.com ./bin/gateway
-
-# With custom config file
-./bin/gateway -config /path/to/config.yaml
+# First run: scan the QR code that appears in your terminal with your phone.
+# Future runs will reconnect automatically via PostgreSQL session store.
 ```
 
-### 3. Link WhatsApp (First Run)
+#### Option B: WABA Mode (Official API)
+```bash
+# Ensure WABA_ENABLED=true in your environment or config
+./bin/waba-gateway
 
-1. Run the gateway - a QR code will appear in terminal
-2. Open WhatsApp on your phone
-3. Go to **Settings** > **Linked Devices**
-4. Tap **Link a Device**
-5. Scan the QR code
-
-### Subsequent Runs
-
-The session is persisted in PostgreSQL. Future runs will reconnect automatically.
+# Ensure your Meta Webhook is pointed to your server's /webhook endpoint.
+```
 
 ## Examples
 

@@ -143,6 +143,17 @@ Wraps the [whatsmeow](https://github.com/tulir/whatsmeow) library and provides m
   8. Forwards to `agent.Client.Chat()` and sends the response back
 - **Graceful shutdown** — listens for `SIGINT`/`SIGTERM`
 
+### `internal/waba` — Official WABA Client
+
+Implements the integration with Meta's WhatsApp Business Cloud API:
+
+- **Webhook Handling (`webhook.go`)** — Handles verification and decryption of incoming messages from Meta.
+- **Graph API Client (`client.go`)** — Manages sending messages and uploading media via the Meta Graph API.
+- **Media Support:**
+    - **Inbound:** Resolves `media_id` from incoming messages, downloads binary data, and prepares it for ADK normalization.
+    - **Outbound:** Uploads media to Meta's servers to obtain a `media_id` before sending the message. Currently focuses on **Image** support.
+- **Normalization:** Aligns WABA-specific message structures with the unified `agent.Part` standard used throughout the gateway.
+
 ### `internal/agent` — ADK Client
 
 HTTP client for the ADK Agent service. Supports two modes:
