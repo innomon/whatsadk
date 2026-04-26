@@ -89,6 +89,19 @@ agents:
     ```bash
     go build -o router_example main.go
     ```
+3.  Run the router (using the default `router.yaml`):
+    ```bash
+    ./router_example
+    ```
+4.  Alternatively, run with a custom configuration file:
+    ```bash
+    ./router_example custom-config.yaml
+    ```
+rl` in `router.yaml`.
+2.  Build the example:
+    ```bash
+    go build -o router_example main.go
+    ```
 3.  Run the router:
     ```bash
     ./router_example

@@ -122,18 +122,39 @@ var (
 )
 
 func loadConfig() {
-	data, err := os.ReadFile("router.yaml")
+	configPath := "router.yaml"
+	if len(os.Args) > 1 {
+		configPath = os.Args[1]
+	}
+
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		if exe, err := os.Executable(); err == nil {
+			exeConfig := filepath.Join(filepath.Dir(exe), "router.yaml")
+			if _, err := os.Stat(exeConfig); err == nil {
+				configPath = exeConfig
+			}
+		}
+	}
+
+	fmt.Printf("📖 Loading router config from %s\n", configPath)
+	data, err := os.ReadFile(configPath)
 	if err != nil {
-		log.Fatalf("failed to read router.yaml: %v", err)
+		log.Fatalf("failed to read %s: %v", configPath, err)
 	}
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		log.Fatalf("failed to parse router.yaml: %v", err)
+		log.Fatalf("failed to parse %s: %v", configPath, err)
 	}
 }
 
 func main() {
 	ctx := context.Background()
 	loadConfig()
+
+	// Adjust args for launcher if we consumed one for config
+	launcherArgs := os.Args[1:]
+	if len(os.Args) > 1 {
+		launcherArgs = os.Args[2:]
+	}
 
 	var err error
 	dbStore, err = store.Open(cfg.PgsqlURL)
@@ -162,7 +183,7 @@ func main() {
 
 	fmt.Println("🚀 Router Agent is ready.")
 	l := full.NewLauncher()
-	if err := l.Execute(ctx, launcherCfg, os.Args[1:]); err != nil {
+	if err := l.Execute(ctx, launcherCfg, launcherArgs); err != nil {
 		log.Fatalf("Launcher failed: %v", err)
 	}
 }
@@ -488,4 +509,6 @@ func classifyInput(ctx context.Context, text string, options []string) int {
 	}
 
 	return idx - 1
+}
+eturn idx - 1
 }
