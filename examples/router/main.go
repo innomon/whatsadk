@@ -11,15 +11,16 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	agenticconfig "github.com/innomon/agentic/pkg/config"
+	"github.com/innomon/agentic/pkg/registry"
 	"github.com/innomon/whatsadk/internal/agent"
 	"github.com/innomon/whatsadk/internal/config"
 	"github.com/innomon/whatsadk/internal/store"
-	agenticconfig "github.com/innomon/agentic/pkg/config"
-	"github.com/innomon/agentic/pkg/registry"
 	adkagent "google.golang.org/adk/agent"
 	"google.golang.org/adk/cmd/launcher"
 	"google.golang.org/adk/cmd/launcher/full"
@@ -317,7 +318,7 @@ func routerRun(invCtx adkagent.InvocationContext) iter.Seq2[*session.Event, erro
 		if rnr, ok := runnerManager.Get(targetApp); ok {
 			// Re-use session ID from router session
 			sessionID := invCtx.Session().ID()
-			
+
 			// Prepare message for the in-process runner
 			msg := &genai.Content{
 				Role:  "user",
@@ -331,7 +332,7 @@ func routerRun(invCtx adkagent.InvocationContext) iter.Seq2[*session.Event, erro
 					yield(nil, err)
 					return
 				}
-				// We need to ensure InvocationID matches if needed, 
+				// We need to ensure InvocationID matches if needed,
 				// but session.Event already has its own ID.
 				if !yield(ev, nil) {
 					return
@@ -509,6 +510,4 @@ func classifyInput(ctx context.Context, text string, options []string) int {
 	}
 
 	return idx - 1
-}
-eturn idx - 1
 }
