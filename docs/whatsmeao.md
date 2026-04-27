@@ -1,4 +1,4 @@
-# [whatsmeow fields containg senders mobile number](https://gemini.google.com/app/f3541b9df3ed178d)
+# [whatsmeow fields containing senders mobile number](https://gemini.google.com/app/f3541b9df3ed178d)
 
 In the **whatsmeow** Go library, the mobile number of a caller or sender is typically stored within a **JID** (Jabber ID) object. WhatsApp uses JIDs in the format `[phone_number]@[server]`.
 
@@ -87,7 +87,7 @@ async def message_stream():
 4. **Frontend/Agent Action:**
 The frontend listens to `/events`. When a new caller ID is received via SSE, the Google ADK Agent can be triggered to lookup the contact in a CRM or provide a summarized greeting to the user.
 
-## Fileter non +91 number
+## Filter non +91 number
 
 To filter messages in `whatsmeow` by country code, you need to inspect the `User` field of the sender's JID. In WhatsApp's infrastructure, the `User` portion of the JID is the phone number without the `+` sign.
 
@@ -150,4 +150,3 @@ If you are integrating this with the Google ADK SSE setup discussed earlier, you
 
 ---
 
-**Would you like me to show you the Go code for the HTTP client part that sends this filtered data to your Google ADK backend?**
