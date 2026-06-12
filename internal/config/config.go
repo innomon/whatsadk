@@ -2,9 +2,12 @@ package config
 
 import (
 	"flag"
+	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -16,6 +19,7 @@ type Config struct {
 	Auth         AuthConfig         `yaml:"auth"`
 	Verification VerificationConfig `yaml:"verification"`
 	Cron         CronConfig         `yaml:"cron"`
+	SurrealDB    SurrealDBConfig    `yaml:"surrealdb"`
 }
 
 type WABAConfig struct {
@@ -98,6 +102,47 @@ type ADKConfig struct {
 	APIKey    string `yaml:"api_key"`
 }
 
+type SurrealDBConfig struct {
+	URL       string `yaml:"url"`
+	Username  string `yaml:"username"`
+	Password  string `yaml:"password"`
+	Namespace string `yaml:"namespace"`
+	Database  string `yaml:"database"`
+}
+
+func (c *Config) FormatSurrealDSN() string {
+	rawURL := c.SurrealDB.URL
+	if rawURL == "" {
+		return ""
+	}
+	if !strings.Contains(rawURL, "://") {
+		rawURL = "ws://" + rawURL
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return c.SurrealDB.URL
+	}
+	protocol := u.Scheme
+	host := u.Host
+	var userPass string
+	if c.SurrealDB.Username != "" {
+		if c.SurrealDB.Password != "" {
+			userPass = fmt.Sprintf("%s:%s@", c.SurrealDB.Username, c.SurrealDB.Password)
+		} else {
+			userPass = fmt.Sprintf("%s@", c.SurrealDB.Username)
+		}
+	}
+	ns := c.SurrealDB.Namespace
+	if ns == "" {
+		ns = "whatsadk"
+	}
+	db := c.SurrealDB.Database
+	if db == "" {
+		db = "whatsadk"
+	}
+	return fmt.Sprintf("surrealdb://%s%s/%s/%s?protocol=%s", userPass, host, ns, db, protocol)
+}
+
 func Load() (*Config, error) {
 	configPath := findConfigPath()
 	if configPath == "" {
@@ -162,8 +207,12 @@ func defaultConfig() *Config {
 
 func (c *Config) applyDefaults() {
 	c.ADK.Enabled = true // Enable ADK by default
-	if c.WhatsApp.StoreDSN == "" {
-		c.WhatsApp.StoreDSN = "postgres://localhost:5432/whatsadk?sslmode=disable"
+	if c.WhatsApp.StoreDSN == "" || c.WhatsApp.StoreDSN == "surrealdb" {
+		if c.SurrealDB.URL != "" {
+			c.WhatsApp.StoreDSN = c.FormatSurrealDSN()
+		} else {
+			c.WhatsApp.StoreDSN = "postgres://localhost:5432/whatsadk?sslmode=disable"
+		}
 	}
 	if c.WhatsApp.LogLevel == "" {
 		c.WhatsApp.LogLevel = "INFO"
@@ -189,8 +238,12 @@ func (c *Config) applyDefaults() {
 	if c.Verification.Messages.Blacklisted == "" {
 		c.Verification.Messages.Blacklisted = "🚫 This number has been blocked from verification."
 	}
-	if c.Verification.DatabaseURL == "" {
-		c.Verification.DatabaseURL = "postgres://localhost:5432/whatsadk?sslmode=disable"
+	if c.Verification.DatabaseURL == "" || c.Verification.DatabaseURL == "surrealdb" {
+		if c.SurrealDB.URL != "" {
+			c.Verification.DatabaseURL = c.FormatSurrealDSN()
+		} else {
+			c.Verification.DatabaseURL = "postgres://localhost:5432/whatsadk?sslmode=disable"
+		}
 	}
 	if c.Verification.Messages.Error == "" {
 		c.Verification.Messages.Error = "⚠️ Something went wrong. Please try again in a moment."
@@ -280,5 +333,20 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if v := os.Getenv("CRON_ENABLED"); v == "true" {
 		c.Cron.Enabled = true
+	}
+	if v := os.Getenv("SURREALDB_URL"); v != "" {
+		c.SurrealDB.URL = v
+	}
+	if v := os.Getenv("SURREALDB_USERNAME"); v != "" {
+		c.SurrealDB.Username = v
+	}
+	if v := os.Getenv("SURREALDB_PASSWORD"); v != "" {
+		c.SurrealDB.Password = v
+	}
+	if v := os.Getenv("SURREALDB_NAMESPACE"); v != "" {
+		c.SurrealDB.Namespace = v
+	}
+	if v := os.Getenv("SURREALDB_DATABASE"); v != "" {
+		c.SurrealDB.Database = v
 	}
 }

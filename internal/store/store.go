@@ -5,16 +5,57 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
 )
 
+type storeBackend interface {
+	Close() error
+	EnqueueCommand(ctx context.Context, cmd string, payload interface{}) (int64, error)
+	UpdateCommandStatus(ctx context.Context, id int64, status string, result interface{}) error
+	PollPendingCommands(ctx context.Context) ([]Command, error)
+	WaitForCommand(ctx context.Context, id int64, timeout time.Duration) (*Command, error)
+	PutFile(ctx context.Context, path string, metadata interface{}, content []byte, timestamp time.Time) error
+	IsBlacklisted(ctx context.Context, phone string) (bool, error)
+	AddBlacklist(ctx context.Context, phone, reason string) error
+	RemoveBlacklist(ctx context.Context, phone string) error
+	ListBlacklist(ctx context.Context) ([]BlacklistedNumber, error)
+	ListContacts(ctx context.Context, query string) ([]Contact, error)
+	GetFilesysLogs(ctx context.Context, phone string, limit int) ([]FileEntry, error)
+	GetLatestGlobalMessages(ctx context.Context, limit int) ([]FileEntry, error)
+	QueryFilesys(ctx context.Context, query string, args ...interface{}) ([]map[string]interface{}, error)
+	GetFile(ctx context.Context, path string) (*FileEntry, error)
+	DeleteFile(ctx context.Context, path string) error
+	ListFiles(ctx context.Context, prefix string, limit int) ([]FileEntry, error)
+}
+
 type Store struct {
+	backend storeBackend
+}
+
+type sqlStore struct {
 	db *sql.DB
 }
 
+func isSurrealDB(dsn string) bool {
+	return strings.HasPrefix(dsn, "surrealdb://") ||
+		strings.HasPrefix(dsn, "ws://") ||
+		strings.HasPrefix(dsn, "wss://") ||
+		strings.HasPrefix(dsn, "http://") ||
+		strings.HasPrefix(dsn, "https://")
+}
+
 func Open(dsn string) (*Store, error) {
+	if isSurrealDB(dsn) {
+		backend, err := openSurrealDB(dsn)
+		if err != nil {
+			return nil, err
+		}
+		return &Store{backend: backend}, nil
+	}
+
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open store db: %w", err)
@@ -25,20 +66,88 @@ func Open(dsn string) (*Store, error) {
 		return nil, fmt.Errorf("ping store db: %w", err)
 	}
 
-	s := &Store{db: db}
+	s := &sqlStore{db: db}
 	if err := s.migrate(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate store db: %w", err)
 	}
 
-	return s, nil
+	return &Store{backend: s}, nil
 }
 
 func (s *Store) Close() error {
+	return s.backend.Close()
+}
+
+func (s *sqlStore) Close() error {
 	return s.db.Close()
 }
 
-func (s *Store) migrate() error {
+func (s *Store) EnqueueCommand(ctx context.Context, cmd string, payload interface{}) (int64, error) {
+	return s.backend.EnqueueCommand(ctx, cmd, payload)
+}
+
+func (s *Store) UpdateCommandStatus(ctx context.Context, id int64, status string, result interface{}) error {
+	return s.backend.UpdateCommandStatus(ctx, id, status, result)
+}
+
+func (s *Store) PollPendingCommands(ctx context.Context) ([]Command, error) {
+	return s.backend.PollPendingCommands(ctx)
+}
+
+func (s *Store) WaitForCommand(ctx context.Context, id int64, timeout time.Duration) (*Command, error) {
+	return s.backend.WaitForCommand(ctx, id, timeout)
+}
+
+func (s *Store) PutFile(ctx context.Context, path string, metadata interface{}, content []byte, timestamp time.Time) error {
+	return s.backend.PutFile(ctx, path, metadata, content, timestamp)
+}
+
+func (s *Store) IsBlacklisted(ctx context.Context, phone string) (bool, error) {
+	return s.backend.IsBlacklisted(ctx, phone)
+}
+
+func (s *Store) AddBlacklist(ctx context.Context, phone, reason string) error {
+	return s.backend.AddBlacklist(ctx, phone, reason)
+}
+
+func (s *Store) RemoveBlacklist(ctx context.Context, phone string) error {
+	return s.backend.RemoveBlacklist(ctx, phone)
+}
+
+func (s *Store) ListBlacklist(ctx context.Context) ([]BlacklistedNumber, error) {
+	return s.backend.ListBlacklist(ctx)
+}
+
+func (s *Store) ListContacts(ctx context.Context, query string) ([]Contact, error) {
+	return s.backend.ListContacts(ctx, query)
+}
+
+func (s *Store) GetFilesysLogs(ctx context.Context, phone string, limit int) ([]FileEntry, error) {
+	return s.backend.GetFilesysLogs(ctx, phone, limit)
+}
+
+func (s *Store) GetLatestGlobalMessages(ctx context.Context, limit int) ([]FileEntry, error) {
+	return s.backend.GetLatestGlobalMessages(ctx, limit)
+}
+
+func (s *Store) QueryFilesys(ctx context.Context, query string, args ...interface{}) ([]map[string]interface{}, error) {
+	return s.backend.QueryFilesys(ctx, query, args...)
+}
+
+func (s *Store) GetFile(ctx context.Context, path string) (*FileEntry, error) {
+	return s.backend.GetFile(ctx, path)
+}
+
+func (s *Store) DeleteFile(ctx context.Context, path string) error {
+	return s.backend.DeleteFile(ctx, path)
+}
+
+func (s *Store) ListFiles(ctx context.Context, prefix string, limit int) ([]FileEntry, error) {
+	return s.backend.ListFiles(ctx, prefix, limit)
+}
+
+func (s *sqlStore) migrate() error {
 	_, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS blacklisted_numbers (
 			phone TEXT PRIMARY KEY,
@@ -102,7 +211,7 @@ type Command struct {
 	UpdatedAt time.Time       `json:"updated_at"`
 }
 
-func (s *Store) EnqueueCommand(ctx context.Context, cmd string, payload interface{}) (int64, error) {
+func (s *sqlStore) EnqueueCommand(ctx context.Context, cmd string, payload interface{}) (int64, error) {
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return 0, fmt.Errorf("marshal payload: %w", err)
@@ -119,7 +228,7 @@ func (s *Store) EnqueueCommand(ctx context.Context, cmd string, payload interfac
 	return id, nil
 }
 
-func (s *Store) UpdateCommandStatus(ctx context.Context, id int64, status string, result interface{}) error {
+func (s *sqlStore) UpdateCommandStatus(ctx context.Context, id int64, status string, result interface{}) error {
 	var resultJSON []byte
 	var err error
 	if result != nil {
@@ -139,7 +248,7 @@ func (s *Store) UpdateCommandStatus(ctx context.Context, id int64, status string
 	return nil
 }
 
-func (s *Store) PollPendingCommands(ctx context.Context) ([]Command, error) {
+func (s *sqlStore) PollPendingCommands(ctx context.Context) ([]Command, error) {
 	rows, err := s.db.QueryContext(ctx,
 		"SELECT id, command, payload, status, result, created_at, updated_at FROM whatsmeow_commands WHERE status = 'pending' ORDER BY created_at ASC",
 	)
@@ -163,7 +272,7 @@ func (s *Store) PollPendingCommands(ctx context.Context) ([]Command, error) {
 	return commands, rows.Err()
 }
 
-func (s *Store) WaitForCommand(ctx context.Context, id int64, timeout time.Duration) (*Command, error) {
+func (s *sqlStore) WaitForCommand(ctx context.Context, id int64, timeout time.Duration) (*Command, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
@@ -194,7 +303,7 @@ func (s *Store) WaitForCommand(ctx context.Context, id int64, timeout time.Durat
 	}
 }
 
-func (s *Store) PutFile(ctx context.Context, path string, metadata interface{}, content []byte, timestamp time.Time) error {
+func (s *sqlStore) PutFile(ctx context.Context, path string, metadata interface{}, content []byte, timestamp time.Time) error {
 	var metadataJSON interface{}
 	var err error
 	if metadata != nil {
@@ -226,7 +335,7 @@ func (s *Store) PutFile(ctx context.Context, path string, metadata interface{}, 
 	return nil
 }
 
-func (s *Store) IsBlacklisted(ctx context.Context, phone string) (bool, error) {
+func (s *sqlStore) IsBlacklisted(ctx context.Context, phone string) (bool, error) {
 	var exists int
 	err := s.db.QueryRowContext(ctx,
 		"SELECT 1 FROM blacklisted_numbers WHERE phone = $1", phone,
@@ -240,7 +349,7 @@ func (s *Store) IsBlacklisted(ctx context.Context, phone string) (bool, error) {
 	return true, nil
 }
 
-func (s *Store) AddBlacklist(ctx context.Context, phone, reason string) error {
+func (s *sqlStore) AddBlacklist(ctx context.Context, phone, reason string) error {
 	_, err := s.db.ExecContext(ctx,
 		"INSERT INTO blacklisted_numbers (phone, reason, created_at) VALUES ($1, $2, $3) ON CONFLICT (phone) DO NOTHING",
 		phone, reason, time.Now().UTC(),
@@ -248,7 +357,7 @@ func (s *Store) AddBlacklist(ctx context.Context, phone, reason string) error {
 	return err
 }
 
-func (s *Store) RemoveBlacklist(ctx context.Context, phone string) error {
+func (s *sqlStore) RemoveBlacklist(ctx context.Context, phone string) error {
 	_, err := s.db.ExecContext(ctx,
 		"DELETE FROM blacklisted_numbers WHERE phone = $1", phone,
 	)
@@ -261,7 +370,7 @@ type BlacklistedNumber struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-func (s *Store) ListBlacklist(ctx context.Context) ([]BlacklistedNumber, error) {
+func (s *sqlStore) ListBlacklist(ctx context.Context) ([]BlacklistedNumber, error) {
 	rows, err := s.db.QueryContext(ctx,
 		"SELECT phone, reason, created_at FROM blacklisted_numbers ORDER BY created_at DESC",
 	)
@@ -290,7 +399,7 @@ type Contact struct {
 	BusinessName string `json:"business_name"`
 }
 
-func (s *Store) ListContacts(ctx context.Context, query string) ([]Contact, error) {
+func (s *sqlStore) ListContacts(ctx context.Context, query string) ([]Contact, error) {
 	var rows *sql.Rows
 	var err error
 
@@ -338,7 +447,7 @@ type FileEntry struct {
 	Timestamp time.Time       `json:"timestamp"`
 }
 
-func (s *Store) GetFilesysLogs(ctx context.Context, phone string, limit int) ([]FileEntry, error) {
+func (s *sqlStore) GetFilesysLogs(ctx context.Context, phone string, limit int) ([]FileEntry, error) {
 	if limit <= 0 {
 		limit = 10
 	}
@@ -370,7 +479,7 @@ func (s *Store) GetFilesysLogs(ctx context.Context, phone string, limit int) ([]
 	return entries, rows.Err()
 }
 
-func (s *Store) GetLatestGlobalMessages(ctx context.Context, limit int) ([]FileEntry, error) {
+func (s *sqlStore) GetLatestGlobalMessages(ctx context.Context, limit int) ([]FileEntry, error) {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -402,7 +511,7 @@ func (s *Store) GetLatestGlobalMessages(ctx context.Context, limit int) ([]FileE
 	return entries, rows.Err()
 }
 
-func (s *Store) QueryFilesys(ctx context.Context, query string, args ...interface{}) ([]map[string]interface{}, error) {
+func (s *sqlStore) QueryFilesys(ctx context.Context, query string, args ...interface{}) ([]map[string]interface{}, error) {
 	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -441,7 +550,7 @@ func (s *Store) QueryFilesys(ctx context.Context, query string, args ...interfac
 	return results, rows.Err()
 }
 
-func (s *Store) GetFile(ctx context.Context, path string) (*FileEntry, error) {
+func (s *sqlStore) GetFile(ctx context.Context, path string) (*FileEntry, error) {
 	var e FileEntry
 	err := s.db.QueryRowContext(ctx,
 		"SELECT path, metadata, content, tmstamp FROM filesys WHERE path = $1",
@@ -456,7 +565,7 @@ func (s *Store) GetFile(ctx context.Context, path string) (*FileEntry, error) {
 	return &e, nil
 }
 
-func (s *Store) DeleteFile(ctx context.Context, path string) error {
+func (s *sqlStore) DeleteFile(ctx context.Context, path string) error {
 	_, err := s.db.ExecContext(ctx, "DELETE FROM filesys WHERE path = $1", path)
 	if err != nil {
 		return fmt.Errorf("delete file: %w", err)
@@ -464,7 +573,7 @@ func (s *Store) DeleteFile(ctx context.Context, path string) error {
 	return nil
 }
 
-func (s *Store) ListFiles(ctx context.Context, prefix string, limit int) ([]FileEntry, error) {
+func (s *sqlStore) ListFiles(ctx context.Context, prefix string, limit int) ([]FileEntry, error) {
 	if limit <= 0 {
 		limit = 50
 	}

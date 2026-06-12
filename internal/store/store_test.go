@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 )
 
 func openTestStore(t *testing.T) *Store {
@@ -105,3 +106,95 @@ func TestAddBlacklist_Duplicate(t *testing.T) {
 		t.Fatalf("expected 1 entry after duplicate add, got %d", len(list))
 	}
 }
+
+func TestCommands(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	payload := map[string]string{"foo": "bar"}
+	id, err := s.EnqueueCommand(ctx, "test_cmd", payload)
+	if err != nil {
+		t.Fatalf("failed to enqueue: %v", err)
+	}
+	if id <= 0 {
+		t.Fatalf("expected positive ID, got %d", id)
+	}
+
+	cmds, err := s.PollPendingCommands(ctx)
+	if err != nil {
+		t.Fatalf("failed to poll: %v", err)
+	}
+
+	found := false
+	for _, c := range cmds {
+		if c.ID == id {
+			found = true
+			if c.Command != "test_cmd" {
+				t.Errorf("expected command name test_cmd, got %q", c.Command)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Errorf("enqueued command %d not found in pending list", id)
+	}
+
+	err = s.UpdateCommandStatus(ctx, id, "completed", map[string]string{"result": "success"})
+	if err != nil {
+		t.Fatalf("failed to update status: %v", err)
+	}
+
+	cmds, err = s.PollPendingCommands(ctx)
+	if err != nil {
+		t.Fatalf("failed to poll after update: %v", err)
+	}
+	for _, c := range cmds {
+		if c.ID == id {
+			t.Errorf("command %d should no longer be pending", id)
+		}
+	}
+}
+
+func TestFilesys(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	path := "test/file.txt"
+	metadata := map[string]string{"mime_type": "text/plain"}
+	content := []byte("hello world")
+	ts := time.Now().UTC()
+
+	err := s.PutFile(ctx, path, metadata, content, ts)
+	if err != nil {
+		t.Fatalf("failed to put file: %v", err)
+	}
+
+	file, err := s.GetFile(ctx, path)
+	if err != nil {
+		t.Fatalf("failed to get file: %v", err)
+	}
+	if file == nil {
+		t.Fatalf("expected file to be found")
+	}
+	if file.Path != path {
+		t.Errorf("expected path %q, got %q", path, file.Path)
+	}
+	if string(file.Content) != "hello world" {
+		t.Errorf("expected content 'hello world', got %q", string(file.Content))
+	}
+
+	// Clean up
+	err = s.DeleteFile(ctx, path)
+	if err != nil {
+		t.Fatalf("failed to delete file: %v", err)
+	}
+
+	file, err = s.GetFile(ctx, path)
+	if err != nil {
+		t.Fatalf("failed to get file after delete: %v", err)
+	}
+	if file != nil {
+		t.Errorf("expected file to be deleted")
+	}
+}
+
