@@ -19,8 +19,8 @@ func NewStore(s *store.Store) *Store {
 func (s *Store) SaveSummary(ctx context.Context, jobName, summary string) error {
 	path := fmt.Sprintf("cron/%s/summary", jobName)
 	metadata := map[string]interface{}{
-		"job_name": jobName,
-		"updated":  time.Now().UTC(),
+		"job_name":  jobName,
+		"updated":   time.Now().UTC(),
 		"mime_type": "text/plain",
 	}
 	return s.s.PutFile(ctx, path, metadata, []byte(summary), time.Now().UTC())

@@ -17,6 +17,16 @@ func openTestStore(t *testing.T) *Store {
 	if err != nil {
 		t.Fatalf("failed to open store: %v", err)
 	}
+	ctx := context.Background()
+	if isSurrealDB(dsn) {
+		_, _ = s.QueryFilesys(ctx, "DELETE FROM blacklisted_numbers")
+		_, _ = s.QueryFilesys(ctx, "DELETE FROM whatsmeow_contacts")
+		_, _ = s.QueryFilesys(ctx, "DELETE FROM whatsmeow_commands")
+		_, _ = s.QueryFilesys(ctx, "DELETE FROM filesys")
+		_, _ = s.QueryFilesys(ctx, "DELETE FROM counter")
+	} else {
+		_, _ = s.QueryFilesys(ctx, "TRUNCATE TABLE blacklisted_numbers, whatsmeow_contacts, whatsmeow_commands, filesys CASCADE")
+	}
 	t.Cleanup(func() { s.Close() })
 	return s
 }
@@ -197,4 +207,3 @@ func TestFilesys(t *testing.T) {
 		t.Errorf("expected file to be deleted")
 	}
 }
-

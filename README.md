@@ -61,6 +61,7 @@ make build
 # bin/keygen        (Security tool)
 # bin/simulator     (WhatsApp TUI simulator)
 # bin/adksim        (ADK Agent TUI simulator)
+# bin/dbutil        (Database export/import tool)
 ```
 
 ## Configuration
@@ -86,6 +87,11 @@ make build
 | `WABA_ACCESS_TOKEN` | No | Meta Graph API Access Token |
 | `WABA_PHONE_NUMBER_ID` | No | Meta Phone Number ID |
 | `WABA_APP_SECRET` | No | Meta App Secret for signature validation |
+| `SURREALDB_URL` | No | SurrealDB connection URL (e.g., `ws://localhost:8000`) |
+| `SURREALDB_USERNAME` | No | SurrealDB username |
+| `SURREALDB_PASSWORD` | No | SurrealDB password |
+| `SURREALDB_NAMESPACE` | No | SurrealDB namespace |
+| `SURREALDB_DATABASE` | No | SurrealDB database |
 | `CONFIG_FILE` | No | Path to config file |
 
 ### Config File
@@ -100,10 +106,19 @@ The gateway searches for `config.yaml` in this order:
 Example `config/config.yaml`:
 ```yaml
 whatsapp:
-  store_dsn: "postgres://localhost:5432/whatsadk?sslmode=disable"  # PostgreSQL for WhatsApp session
+  store_dsn: "postgres://localhost:5432/whatsadk?sslmode=disable"  # PostgreSQL, or set to "surrealdb" to use SurrealDB config below
   log_level: "INFO"            # DEBUG, INFO, WARN, ERROR
   whitelisted_users:           # Phone numbers allowed regardless of country
     - "1234567890"
+
+# Optional: Dedicated SurrealDB configuration block
+# If configured and store_dsn/database_url is empty or "surrealdb", SurrealDB is used.
+surrealdb:
+  url: "ws://localhost:8000"
+  username: "root"
+  password: "root"
+  namespace: "whatsadk"
+  database: "whatsadk"
 
 adk:
   endpoint: "http://localhost:8000"  # ADK service URL
@@ -346,7 +361,7 @@ The `schedule` supports standard cron expressions and descriptors like `@every 5
 
 ## Memory & Persistence
 
-The gateway utilizes PostgreSQL for session storage, contact synchronization, and global blacklisting.
+The gateway utilizes PostgreSQL or SurrealDB for session storage, contact synchronization, and global blacklisting.
 
 ### Memory Implementation
 
@@ -562,6 +577,45 @@ To debug a specific agent failure using a real conversation log:
 ```
 
 The exported JSON can then be loaded into the simulator using `/replay` to reproduce and fix agentic workflow issues.
+
+### Database Export/Import Utility (`dbutil`)
+
+The `dbutil` command-line utility provides database-agnostic import/export capabilities using the standard **JSON Lines (JSONL)** format. This format is fully streaming-friendly (ideal for large message databases) and translates binary assets (like files in the filesys database) into portable Base64 encoded JSON objects. 
+
+This tool allows seamless database migrations (e.g., migrating from PostgreSQL to SurrealDB or vice-versa) and general backups/restores.
+
+#### Build
+```bash
+make build
+# Or directly compile:
+go build -o bin/dbutil ./cmd/dbutil
+```
+
+#### Usage
+
+```bash
+# Export the database contents to a JSONL file (defaults to export.jsonl)
+./bin/dbutil export -out backup.jsonl
+
+# Export to stdout (useful for piping or redirecting)
+./bin/dbutil export -out - > backup.jsonl
+
+# Import database contents from a JSONL file (defaults to export.jsonl)
+./bin/dbutil import -in backup.jsonl
+
+# Import from stdin
+cat backup.jsonl | ./bin/dbutil import -in -
+
+# Specify a custom config file path
+./bin/dbutil -config my-config.yaml export -out backup.jsonl
+```
+
+#### Supported Tables/Entities
+The utility exports and restores the following tables across both PostgreSQL and SurrealDB backends:
+1. `blacklisted_numbers` (Blocked phones/contacts)
+2. `whatsmeow_contacts` (Synched WhatsApp contacts)
+3. `whatsmeow_commands` (Outbound agent command queue)
+4. `filesys` (Gateway request/response logs and downloaded media files)
 
 ## Architecture
 

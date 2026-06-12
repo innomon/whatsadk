@@ -14,10 +14,10 @@ import (
 )
 
 type Server struct {
-	port      int
-	appName   string
-	requests  chan *IncomingRequest
-	mediaDir  string
+	port     int
+	appName  string
+	requests chan *IncomingRequest
+	mediaDir string
 }
 
 func NewServer(port int, appName string, requests chan *IncomingRequest) *Server {
@@ -33,10 +33,10 @@ func NewServer(port int, appName string, requests chan *IncomingRequest) *Server
 
 func (s *Server) Run() error {
 	mux := http.NewServeMux()
-	
+
 	// Session management (always 200)
 	mux.HandleFunc("POST /apps/{appName}/users/{userID}/sessions/{sessionID}", s.handleSession)
-	
+
 	// Chat endpoints
 	mux.HandleFunc("POST /run", s.handleRun)
 	mux.HandleFunc("POST /run_sse", s.handleRunSSE)
@@ -128,7 +128,7 @@ func (s *Server) handleRunSSE(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) processRequest(req *agent.RunRequest, streaming bool) *IncomingRequest {
 	id := uuid.New().String()
-	
+
 	// Extract media if present
 	if req.NewMessage != nil {
 		for i, part := range req.NewMessage.Parts {
@@ -136,7 +136,7 @@ func (s *Server) processRequest(req *agent.RunRequest, streaming bool) *Incoming
 				path, err := s.saveMedia(part.InlineData)
 				if err == nil {
 					// Add a "virtual" text part to show path in TUI
-					// We modify a clone to avoid side effects? 
+					// We modify a clone to avoid side effects?
 					// Actually, the TUI will display the file path.
 					fmt.Printf("[ADKSim] Saved media from %s: %s\n", req.UserID, path)
 				}
@@ -176,16 +176,27 @@ func (s *Server) saveMedia(data *agent.InlineData) (string, error) {
 // mimeToExt copied from simulator.go for consistency (could be refactored to internal/media/utils.go later)
 func mimeToExt(mime string) string {
 	switch mime {
-	case "image/jpeg": return ".jpg"
-	case "image/png":  return ".png"
-	case "image/webp": return ".webp"
-	case "audio/wav":  return ".wav"
-	case "audio/mpeg": return ".mp3"
-	case "audio/ogg", "audio/opus": return ".ogg"
-	case "video/mp4":  return ".mp4"
-	case "application/pdf": return ".pdf"
-	case "text/plain": return ".txt"
-	case "text/csv":   return ".csv"
-	default:           return ".bin"
+	case "image/jpeg":
+		return ".jpg"
+	case "image/png":
+		return ".png"
+	case "image/webp":
+		return ".webp"
+	case "audio/wav":
+		return ".wav"
+	case "audio/mpeg":
+		return ".mp3"
+	case "audio/ogg", "audio/opus":
+		return ".ogg"
+	case "video/mp4":
+		return ".mp4"
+	case "application/pdf":
+		return ".pdf"
+	case "text/plain":
+		return ".txt"
+	case "text/csv":
+		return ".csv"
+	default:
+		return ".bin"
 	}
 }

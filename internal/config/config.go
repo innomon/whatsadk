@@ -46,10 +46,10 @@ type CronJobConfig struct {
 }
 
 type VerificationConfig struct {
-	Enabled         bool                      `yaml:"enabled"`
-	CallbackTimeout string                    `yaml:"callback_timeout"`
-	DatabaseURL     string                    `yaml:"database_url"`
-	DevOpsNumbers   []string                  `yaml:"devops_numbers"`
+	Enabled         bool                       `yaml:"enabled"`
+	CallbackTimeout string                     `yaml:"callback_timeout"`
+	DatabaseURL     string                     `yaml:"database_url"`
+	DevOpsNumbers   []string                   `yaml:"devops_numbers"`
 	Apps            map[string]AppVerifyConfig `yaml:"apps"`
 	Messages        VerificationMessages       `yaml:"messages"`
 }

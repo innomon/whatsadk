@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/surrealdb/surrealdb.go"
+	"github.com/surrealdb/surrealdb.go/pkg/models"
 )
 
 type surrealStore struct {
@@ -82,22 +83,70 @@ func (s *surrealStore) Close() error {
 }
 
 type surrealCommand struct {
-	ID        int64     `json:"id"`
-	Command   string    `json:"command"`
-	Payload   string    `json:"payload"`
-	Status    string    `json:"status"`
-	Result    string    `json:"result"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        interface{} `json:"id"`
+	Command   string      `json:"command"`
+	Payload   string      `json:"payload"`
+	Status    string      `json:"status"`
+	Result    string      `json:"result"`
+	CreatedAt time.Time   `json:"created_at"`
+	UpdatedAt time.Time   `json:"updated_at"`
+}
+
+func parseSurrealID(rawID interface{}) int64 {
+	if rawID == nil {
+		return 0
+	}
+	switch v := rawID.(type) {
+	case models.RecordID:
+		return parseSurrealID(v.ID)
+	case *models.RecordID:
+		if v != nil {
+			return parseSurrealID(v.ID)
+		}
+	case float64:
+		return int64(v)
+	case int64:
+		return v
+	case uint64:
+		return int64(v)
+	case int:
+		return int64(v)
+	case uint:
+		return int64(v)
+	case string:
+		var id int64
+		if _, err := fmt.Sscan(v, &id); err == nil {
+			return id
+		}
+		parts := strings.Split(v, ":")
+		if len(parts) > 1 {
+			if _, err := fmt.Sscan(parts[1], &id); err == nil {
+				return id
+			}
+		}
+	case map[string]interface{}:
+		if idVal, ok := v["id"]; ok {
+			return parseSurrealID(idVal)
+		}
+	}
+	return 0
 }
 
 func toCommand(sc surrealCommand) Command {
+	payload := []byte(sc.Payload)
+	if len(payload) == 0 {
+		payload = []byte("null")
+	}
+	result := []byte(sc.Result)
+	if len(result) == 0 {
+		result = []byte("null")
+	}
 	return Command{
-		ID:        sc.ID,
+		ID:        parseSurrealID(sc.ID),
 		Command:   sc.Command,
-		Payload:   json.RawMessage(sc.Payload),
+		Payload:   json.RawMessage(payload),
 		Status:    sc.Status,
-		Result:    json.RawMessage(sc.Result),
+		Result:    json.RawMessage(result),
 		CreatedAt: sc.CreatedAt,
 		UpdatedAt: sc.UpdatedAt,
 	}
@@ -110,7 +159,7 @@ func (s *surrealStore) EnqueueCommand(ctx context.Context, cmd string, payload i
 	}
 
 	// Atomically increment counter
-	res, err := surrealdb.Query[[]map[string]interface{}](ctx, s.db, "UPDATE counter:whatsmeow_commands SET val = (val OR 0) + 1", nil)
+	res, err := surrealdb.Query[[]map[string]interface{}](ctx, s.db, "UPSERT counter:whatsmeow_commands SET val = (val OR 0) + 1", nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to increment counter: %w", err)
 	}
@@ -134,8 +183,8 @@ func (s *surrealStore) EnqueueCommand(ctx context.Context, cmd string, payload i
 
 	now := time.Now().UTC()
 	recordID := fmt.Sprintf("whatsmeow_commands:%d", newID)
-	_, err = surrealdb.Query[interface{}](ctx, s.db, 
-		"CREATE $record_id SET id = $id, command = $command, payload = $payload, status = 'pending', created_at = $created_at, updated_at = $updated_at",
+	_, err = surrealdb.Query[interface{}](ctx, s.db,
+		"CREATE type::record($record_id) SET id = $id, command = $command, payload = $payload, status = 'pending', created_at = $created_at, updated_at = $updated_at",
 		map[string]interface{}{
 			"record_id":  recordID,
 			"id":         newID,
@@ -164,7 +213,7 @@ func (s *surrealStore) UpdateCommandStatus(ctx context.Context, id int64, status
 
 	recordID := fmt.Sprintf("whatsmeow_commands:%d", id)
 	_, err = surrealdb.Query[interface{}](ctx, s.db,
-		"UPDATE $record_id SET status = $status, result = $result, updated_at = $updated_at",
+		"UPDATE type::record($record_id) SET status = $status, result = $result, updated_at = $updated_at",
 		map[string]interface{}{
 			"record_id":  recordID,
 			"status":     status,
@@ -208,7 +257,7 @@ func (s *surrealStore) WaitForCommand(ctx context.Context, id int64, timeout tim
 			return nil, ctx.Err()
 		case <-ticker.C:
 			res, err := surrealdb.Query[[]surrealCommand](ctx, s.db,
-				"SELECT * FROM $record_id", map[string]interface{}{"record_id": recordID})
+				"SELECT * FROM type::record($record_id)", map[string]interface{}{"record_id": recordID})
 			if err != nil {
 				return nil, fmt.Errorf("get command: %w", err)
 			}
@@ -266,7 +315,7 @@ func (s *surrealStore) PutFile(ctx context.Context, path string, metadata interf
 	recordID := fmt.Sprintf("filesys:%s", idPart)
 
 	_, err = surrealdb.Query[interface{}](ctx, s.db,
-		"UPSERT $record_id SET path = $path, metadata = $metadata, content = $content, tmstamp = $tmstamp",
+		"UPSERT type::record($record_id) SET path = $path, metadata = $metadata, content = $content, tmstamp = $tmstamp",
 		map[string]interface{}{
 			"record_id": recordID,
 			"path":      path,
@@ -288,7 +337,7 @@ func (s *surrealStore) GetFile(ctx context.Context, path string) (*FileEntry, er
 	recordID := fmt.Sprintf("filesys:%s", idPart)
 
 	res, err := surrealdb.Query[[]surrealFileEntry](ctx, s.db,
-		"SELECT * FROM $record_id", map[string]interface{}{"record_id": recordID})
+		"SELECT * FROM type::record($record_id)", map[string]interface{}{"record_id": recordID})
 	if err != nil {
 		return nil, fmt.Errorf("get file: %w", err)
 	}
@@ -307,7 +356,7 @@ func (s *surrealStore) DeleteFile(ctx context.Context, path string) error {
 	recordID := fmt.Sprintf("filesys:%s", idPart)
 
 	_, err := surrealdb.Query[interface{}](ctx, s.db,
-		"DELETE FROM $record_id", map[string]interface{}{"record_id": recordID})
+		"DELETE FROM type::record($record_id)", map[string]interface{}{"record_id": recordID})
 	if err != nil {
 		return fmt.Errorf("delete file: %w", err)
 	}
@@ -402,7 +451,7 @@ func (s *surrealStore) GetLatestGlobalMessages(ctx context.Context, limit int) (
 	return entries, nil
 }
 
-func (s *surrealStore) QueryFilesys(ctx context.Context, query string, args ...interface{}/* unused in surrealQL standard dynamic filesys */) ([]map[string]interface{}, error) {
+func (s *surrealStore) QueryFilesys(ctx context.Context, query string, args ...interface{} /* unused in surrealQL standard dynamic filesys */) ([]map[string]interface{}, error) {
 	vars := make(map[string]interface{})
 	for i, arg := range args {
 		vars[fmt.Sprintf("v%d", i+1)] = arg
@@ -430,7 +479,7 @@ type surrealBlacklist struct {
 func (s *surrealStore) IsBlacklisted(ctx context.Context, phone string) (bool, error) {
 	recordID := fmt.Sprintf("blacklisted_numbers:%s", phone)
 	res, err := surrealdb.Query[[]surrealBlacklist](ctx, s.db,
-		"SELECT * FROM $record_id", map[string]interface{}{"record_id": recordID})
+		"SELECT * FROM type::record($record_id)", map[string]interface{}{"record_id": recordID})
 	if err != nil {
 		return false, fmt.Errorf("check blacklist: %w", err)
 	}
@@ -444,7 +493,7 @@ func (s *surrealStore) IsBlacklisted(ctx context.Context, phone string) (bool, e
 func (s *surrealStore) AddBlacklist(ctx context.Context, phone, reason string) error {
 	recordID := fmt.Sprintf("blacklisted_numbers:%s", phone)
 	_, err := surrealdb.Query[interface{}](ctx, s.db,
-		"UPSERT $record_id SET phone = $phone, reason = $reason, created_at = $created_at",
+		"UPSERT type::record($record_id) SET phone = $phone, reason = $reason, created_at = $created_at",
 		map[string]interface{}{
 			"record_id":  recordID,
 			"phone":      phone,
@@ -458,7 +507,7 @@ func (s *surrealStore) AddBlacklist(ctx context.Context, phone, reason string) e
 func (s *surrealStore) RemoveBlacklist(ctx context.Context, phone string) error {
 	recordID := fmt.Sprintf("blacklisted_numbers:%s", phone)
 	_, err := surrealdb.Query[interface{}](ctx, s.db,
-		"DELETE FROM $record_id", map[string]interface{}{"record_id": recordID})
+		"DELETE FROM type::record($record_id)", map[string]interface{}{"record_id": recordID})
 	return err
 }
 
@@ -527,4 +576,123 @@ func (s *surrealStore) ListContacts(ctx context.Context, query string) ([]Contac
 		}
 	}
 	return contacts, nil
+}
+
+func (s *surrealStore) GetAllContacts(ctx context.Context) ([]Contact, error) {
+	res, err := surrealdb.Query[[]surrealContact](ctx, s.db,
+		"SELECT * FROM whatsmeow_contacts ORDER BY full_name ASC", nil)
+	if err != nil {
+		return nil, fmt.Errorf("get all contacts: %w", err)
+	}
+
+	var contacts []Contact
+	if res != nil && len(*res) > 0 {
+		for _, sc := range (*res)[0].Result {
+			contacts = append(contacts, Contact{
+				OurJID:       sc.OurJID,
+				TheirJID:     sc.TheirJID,
+				FullName:     sc.FullName,
+				ShortName:    sc.ShortName,
+				PushName:     sc.PushName,
+				BusinessName: sc.BusinessName,
+			})
+		}
+	}
+	return contacts, nil
+}
+
+func (s *surrealStore) PutContact(ctx context.Context, c Contact) error {
+	hasher := md5.New()
+	hasher.Write([]byte(c.OurJID + "_" + c.TheirJID))
+	idPart := hex.EncodeToString(hasher.Sum(nil))
+	recordID := fmt.Sprintf("whatsmeow_contacts:%s", idPart)
+
+	_, err := surrealdb.Query[interface{}](ctx, s.db,
+		`UPSERT type::record($record_id) SET our_jid = $our_jid, their_jid = $their_jid,
+		 full_name = $full_name, short_name = $short_name, push_name = $push_name,
+		 business_name = $business_name`,
+		map[string]interface{}{
+			"record_id":     recordID,
+			"our_jid":       c.OurJID,
+			"their_jid":     c.TheirJID,
+			"full_name":     c.FullName,
+			"short_name":    c.ShortName,
+			"push_name":     c.PushName,
+			"business_name": c.BusinessName,
+		},
+	)
+	return err
+}
+
+func (s *surrealStore) GetAllCommands(ctx context.Context) ([]Command, error) {
+	res, err := surrealdb.Query[[]surrealCommand](ctx, s.db,
+		"SELECT * FROM whatsmeow_commands ORDER BY id ASC", nil)
+	if err != nil {
+		return nil, fmt.Errorf("get all commands: %w", err)
+	}
+
+	var commands []Command
+	if res != nil && len(*res) > 0 {
+		for _, sc := range (*res)[0].Result {
+			commands = append(commands, toCommand(sc))
+		}
+	}
+	return commands, nil
+}
+
+func (s *surrealStore) PutCommand(ctx context.Context, c Command) error {
+	recordID := fmt.Sprintf("whatsmeow_commands:%d", c.ID)
+	_, err := surrealdb.Query[interface{}](ctx, s.db,
+		`UPSERT type::record($record_id) SET id = $id, command = $command, payload = $payload,
+		 status = $status, result = $result, created_at = $created_at, updated_at = $updated_at`,
+		map[string]interface{}{
+			"record_id":  recordID,
+			"id":         c.ID,
+			"command":    c.Command,
+			"payload":    string(c.Payload),
+			"status":     c.Status,
+			"result":     string(c.Result),
+			"created_at": c.CreatedAt,
+			"updated_at": c.UpdatedAt,
+		},
+	)
+	return err
+}
+
+func (s *surrealStore) GetAllFiles(ctx context.Context) ([]FileEntry, error) {
+	res, err := surrealdb.Query[[]surrealFileEntry](ctx, s.db,
+		"SELECT * FROM filesys ORDER BY tmstamp ASC", nil)
+	if err != nil {
+		return nil, fmt.Errorf("get all files: %w", err)
+	}
+
+	var entries []FileEntry
+	if res != nil && len(*res) > 0 {
+		for _, sfe := range (*res)[0].Result {
+			entries = append(entries, toFileEntry(sfe))
+		}
+	}
+	return entries, nil
+}
+
+func (s *surrealStore) ResetSequence(ctx context.Context) error {
+	// SurrealDB generates record IDs differently (whatsmeow_commands:<id>)
+	// and handles the auto-increment val via updates on a counter:whatsmeow_commands record.
+	// So we need to set the counter's val to MAX(id) if a counter exists, or just do nothing.
+	res, err := surrealdb.Query[[]surrealCommand](ctx, s.db,
+		"SELECT * FROM whatsmeow_commands ORDER BY id DESC LIMIT 1", nil)
+	if err != nil {
+		return err
+	}
+	if res != nil && len(*res) > 0 && len((*res)[0].Result) > 0 {
+		maxID := (*res)[0].Result[0].ID
+		_, err = surrealdb.Query[interface{}](ctx, s.db,
+			"UPSERT counter:whatsmeow_commands SET val = $val",
+			map[string]interface{}{
+				"val": maxID,
+			},
+		)
+		return err
+	}
+	return nil
 }

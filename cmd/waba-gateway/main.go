@@ -58,7 +58,7 @@ func main() {
 	// Webhook handler logic
 	onMessageParts := func(sender string, parts []agent.Part) {
 		log.Printf("Received WABA message parts from %s: %d parts", sender, len(parts))
-		
+
 		ctx := context.Background()
 		uniqueID := fmt.Sprintf("waba_%d", time.Now().UnixNano())
 
@@ -101,7 +101,7 @@ func main() {
 			} else {
 				// Regular text part
 				processedParts = append(processedParts, part)
-				
+
 				// Store text request
 				if part.Text != "" {
 					path := fmt.Sprintf("waba/%s/%s/request", sender, uniqueID)
@@ -136,7 +136,7 @@ func main() {
 				if err := wabaClient.SendText(ctx, sender, part.Text); err != nil {
 					log.Printf("WABA Send Error: %v", err)
 				}
-				
+
 				respPath := fmt.Sprintf("waba/%s/%s/response", sender, uniqueID)
 				respMetadata := map[string]interface{}{
 					"mime_type": "text/plain",
@@ -145,7 +145,7 @@ func main() {
 				s.PutFile(ctx, respPath, respMetadata, []byte(part.Text), time.Now())
 				continue
 			}
-			
+
 			if part.InlineData != nil {
 				data, err := base64.StdEncoding.DecodeString(part.InlineData.Data)
 				if err != nil {
@@ -165,7 +165,7 @@ func main() {
 					if err := wabaClient.SendImage(ctx, sender, mediaID, caption); err != nil {
 						log.Printf("WABA Send Image Error: %v", err)
 					}
-					
+
 					// Reset caption after use
 					caption = ""
 
@@ -192,9 +192,9 @@ func main() {
 
 	addr := fmt.Sprintf(":%d", cfg.WABA.Port)
 	fmt.Printf("🚀 WABA Gateway listening on %s/webhook\n", addr)
-	
+
 	http.Handle("/webhook", handler)
-	
+
 	server := &http.Server{
 		Addr: addr,
 	}

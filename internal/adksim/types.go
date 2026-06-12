@@ -6,13 +6,13 @@ import (
 
 // IncomingRequest represents a prompt received from the gateway.
 type IncomingRequest struct {
-	ID        string           `json:"id"`
-	AppName   string           `json:"appName"`
-	UserID    string           `json:"userId"`
-	SessionID string           `json:"sessionId"`
-	NewMessage *agent.Message  `json:"newMessage"`
-	Streaming bool             `json:"streaming"`
-	
+	ID         string         `json:"id"`
+	AppName    string         `json:"appName"`
+	UserID     string         `json:"userId"`
+	SessionID  string         `json:"sessionId"`
+	NewMessage *agent.Message `json:"newMessage"`
+	Streaming  bool           `json:"streaming"`
+
 	// ResponseChan is used by the TUI to send the human's response back to the HTTP handler.
 	ResponseChan chan OutgoingResponse
 }

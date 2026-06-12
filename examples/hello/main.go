@@ -39,7 +39,7 @@ func main() {
 	fmt.Println("To run as API server, use: go run main.go web api")
 	fmt.Println("To run as API server on custom port: go run main.go web --port <port> api")
 	fmt.Println("To run as interactive console, use: go run main.go console")
-	
+
 	l := full.NewLauncher()
 	if err := l.Execute(ctx, cfg, os.Args[1:]); err != nil {
 		log.Fatalf("Launcher failed: %v", err)
@@ -87,7 +87,7 @@ func helloWorkRun(invCtx agent.InvocationContext) iter.Seq2[*session.Event, erro
 				},
 			},
 		}
-		
+
 		yield(event, nil)
 	}
 }

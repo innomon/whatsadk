@@ -109,14 +109,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			parts = append(parts, m.attachments...)
 
 			req.ResponseChan <- OutgoingResponse{Parts: parts}
-			
+
 			m.messages = append(m.messages, lipgloss.NewStyle().Foreground(lipgloss.Color("6")).Render("Agent: ")+input)
 			for _, p := range m.attachments {
 				if p.InlineData != nil {
 					m.messages = append(m.messages, lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(fmt.Sprintf("  [Attached: %s]", p.InlineData.MimeType)))
 				}
 			}
-			
+
 			m.attachments = nil
 			m.textarea.Reset()
 			m.viewport.SetContent(strings.Join(m.messages, "\n"))
@@ -138,33 +138,34 @@ func (m *model) handleCommand(input string) {
 
 	switch cmd {
 	case "help":
-	        m.messages = append(m.messages, "Available commands:\n  /attach <path> - Attach a file\n  /ignore <reason> - Send a silent ignore message\n  /clear - Clear screen\n  /help - Show this help")
+		m.messages = append(m.messages, "Available commands:\n  /attach <path> - Attach a file\n  /ignore <reason> - Send a silent ignore message\n  /clear - Clear screen\n  /help - Show this help")
 	case "ignore":
-	        if len(m.pending) == 0 {
-	                m.messages = append(m.messages, lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Render("System: No pending requests to ignore."))
-	                return
-	        }
-	        reason := "Silent ignore from simulator"
-	        if len(args) > 0 {
-	                reason = strings.Join(args, " ")
-	        }
+		if len(m.pending) == 0 {
+			m.messages = append(m.messages, lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Render("System: No pending requests to ignore."))
+			return
+		}
+		reason := "Silent ignore from simulator"
+		if len(args) > 0 {
+			reason = strings.Join(args, " ")
+		}
 
-	        req := m.pending[0]
-	        m.pending = m.pending[1:]
+		req := m.pending[0]
+		m.pending = m.pending[1:]
 
-	        ignorePart := agent.Part{
-	                InlineData: &agent.InlineData{
-	                        MimeType: agent.MimeTypeSilentIgnore,
-	                        Data:     base64.StdEncoding.EncodeToString([]byte(reason)),
-	                },
-	        }
+		ignorePart := agent.Part{
+			InlineData: &agent.InlineData{
+				MimeType: agent.MimeTypeSilentIgnore,
+				Data:     base64.StdEncoding.EncodeToString([]byte(reason)),
+			},
+		}
 
-	        req.ResponseChan <- OutgoingResponse{Parts: []agent.Part{ignorePart}}
+		req.ResponseChan <- OutgoingResponse{Parts: []agent.Part{ignorePart}}
 
-	        m.messages = append(m.messages, lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(fmt.Sprintf("🚫 Ignored (Reason: %s)", reason)))
-	        m.viewport.SetContent(strings.Join(m.messages, "\n"))
-	        m.viewport.GotoBottom()
-	case "clear":		m.messages = []string{}
+		m.messages = append(m.messages, lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(fmt.Sprintf("🚫 Ignored (Reason: %s)", reason)))
+		m.viewport.SetContent(strings.Join(m.messages, "\n"))
+		m.viewport.GotoBottom()
+	case "clear":
+		m.messages = []string{}
 		m.viewport.SetContent("")
 	case "attach":
 		if len(args) == 0 {

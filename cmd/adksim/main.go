@@ -18,7 +18,7 @@ func main() {
 	requests := make(chan *adksim.IncomingRequest, 100)
 
 	server := adksim.NewServer(*port, *appName, requests)
-	
+
 	// Run server in background
 	go func() {
 		if err := server.Run(); err != nil {

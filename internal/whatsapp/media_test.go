@@ -1,11 +1,11 @@
 package whatsapp
 
 import (
+	"bytes"
 	"context"
 	"image"
 	"image/color"
 	"image/jpeg"
-	"bytes"
 	"testing"
 )
 

@@ -90,13 +90,13 @@ func runExport() {
 
 // TUI Model
 type model struct {
-	sim        *simulator.Simulator
-	registry   *simulator.Registry
-	viewport   viewport.Model
-	textarea   textarea.Model
-	messages   []string
-	err        error
-	sender     string
+	sim      *simulator.Simulator
+	registry *simulator.Registry
+	viewport viewport.Model
+	textarea textarea.Model
+	messages []string
+	err      error
+	sender   string
 }
 
 func initialModel(sim *simulator.Simulator, registry *simulator.Registry) model {

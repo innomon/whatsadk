@@ -29,6 +29,12 @@ type storeBackend interface {
 	GetFile(ctx context.Context, path string) (*FileEntry, error)
 	DeleteFile(ctx context.Context, path string) error
 	ListFiles(ctx context.Context, prefix string, limit int) ([]FileEntry, error)
+	GetAllContacts(ctx context.Context) ([]Contact, error)
+	PutContact(ctx context.Context, contact Contact) error
+	GetAllCommands(ctx context.Context) ([]Command, error)
+	PutCommand(ctx context.Context, cmd Command) error
+	GetAllFiles(ctx context.Context) ([]FileEntry, error)
+	ResetSequence(ctx context.Context) error
 }
 
 type Store struct {
@@ -145,6 +151,30 @@ func (s *Store) DeleteFile(ctx context.Context, path string) error {
 
 func (s *Store) ListFiles(ctx context.Context, prefix string, limit int) ([]FileEntry, error) {
 	return s.backend.ListFiles(ctx, prefix, limit)
+}
+
+func (s *Store) GetAllContacts(ctx context.Context) ([]Contact, error) {
+	return s.backend.GetAllContacts(ctx)
+}
+
+func (s *Store) PutContact(ctx context.Context, contact Contact) error {
+	return s.backend.PutContact(ctx, contact)
+}
+
+func (s *Store) GetAllCommands(ctx context.Context) ([]Command, error) {
+	return s.backend.GetAllCommands(ctx)
+}
+
+func (s *Store) PutCommand(ctx context.Context, cmd Command) error {
+	return s.backend.PutCommand(ctx, cmd)
+}
+
+func (s *Store) GetAllFiles(ctx context.Context) ([]FileEntry, error) {
+	return s.backend.GetAllFiles(ctx)
+}
+
+func (s *Store) ResetSequence(ctx context.Context) error {
+	return s.backend.ResetSequence(ctx)
 }
 
 func (s *sqlStore) migrate() error {
@@ -441,10 +471,10 @@ func (s *sqlStore) ListContacts(ctx context.Context, query string) ([]Contact, e
 }
 
 type FileEntry struct {
-	Path      string          `json:"path"`
-	Metadata  sql.NullString  `json:"metadata"`
-	Content   []byte          `json:"content,omitempty"`
-	Timestamp time.Time       `json:"timestamp"`
+	Path      string         `json:"path"`
+	Metadata  sql.NullString `json:"metadata"`
+	Content   []byte         `json:"content,omitempty"`
+	Timestamp time.Time      `json:"timestamp"`
 }
 
 func (s *sqlStore) GetFilesysLogs(ctx context.Context, phone string, limit int) ([]FileEntry, error) {
@@ -602,4 +632,129 @@ func (s *sqlStore) ListFiles(ctx context.Context, prefix string, limit int) ([]F
 		entries = append(entries, e)
 	}
 	return entries, rows.Err()
+}
+
+func (s *sqlStore) GetAllContacts(ctx context.Context) ([]Contact, error) {
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT our_jid, their_jid, full_name, short_name, push_name, business_name FROM whatsmeow_contacts ORDER BY full_name ASC",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get all contacts: %w", err)
+	}
+	defer rows.Close()
+
+	var contacts []Contact
+	for rows.Next() {
+		var c Contact
+		var fullName, shortName, pushName, businessName sql.NullString
+		err := rows.Scan(&c.OurJID, &c.TheirJID, &fullName, &shortName, &pushName, &businessName)
+		if err != nil {
+			return nil, fmt.Errorf("scan contact row: %w", err)
+		}
+		c.FullName = fullName.String
+		c.ShortName = shortName.String
+		c.PushName = pushName.String
+		c.BusinessName = businessName.String
+		contacts = append(contacts, c)
+	}
+	return contacts, rows.Err()
+}
+
+func (s *sqlStore) PutContact(ctx context.Context, c Contact) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO whatsmeow_contacts (our_jid, their_jid, full_name, short_name, push_name, business_name)
+		 VALUES ($1, $2, $3, $4, $5, $6)
+		 ON CONFLICT (our_jid, their_jid) DO UPDATE SET
+			full_name = EXCLUDED.full_name,
+			short_name = EXCLUDED.short_name,
+			push_name = EXCLUDED.push_name,
+			business_name = EXCLUDED.business_name`,
+		c.OurJID, c.TheirJID,
+		sqlNullString(c.FullName), sqlNullString(c.ShortName),
+		sqlNullString(c.PushName), sqlNullString(c.BusinessName),
+	)
+	return err
+}
+
+func (s *sqlStore) GetAllCommands(ctx context.Context) ([]Command, error) {
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT id, command, payload, status, result, created_at, updated_at FROM whatsmeow_commands ORDER BY id ASC",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get all commands: %w", err)
+	}
+	defer rows.Close()
+
+	var commands []Command
+	for rows.Next() {
+		var c Command
+		var payload, result []byte
+		err := rows.Scan(&c.ID, &c.Command, &payload, &c.Status, &result, &c.CreatedAt, &c.UpdatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("scan command row: %w", err)
+		}
+		c.Payload = payload
+		c.Result = result
+		commands = append(commands, c)
+	}
+	return commands, rows.Err()
+}
+
+func (s *sqlStore) PutCommand(ctx context.Context, c Command) error {
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO whatsmeow_commands (id, command, payload, status, result, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		 ON CONFLICT (id) DO UPDATE SET
+			command = EXCLUDED.command,
+			payload = EXCLUDED.payload,
+			status = EXCLUDED.status,
+			result = EXCLUDED.result,
+			created_at = EXCLUDED.created_at,
+			updated_at = EXCLUDED.updated_at`,
+		c.ID, c.Command, []byte(c.Payload), c.Status, []byte(c.Result), c.CreatedAt, c.UpdatedAt,
+	)
+	return err
+}
+
+func (s *sqlStore) GetAllFiles(ctx context.Context) ([]FileEntry, error) {
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT path, metadata, content, tmstamp FROM filesys ORDER BY tmstamp ASC",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get all files: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []FileEntry
+	for rows.Next() {
+		var e FileEntry
+		if err := rows.Scan(&e.Path, &e.Metadata, &e.Content, &e.Timestamp); err != nil {
+			return nil, fmt.Errorf("scan filesys row: %w", err)
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+func (s *sqlStore) ResetSequence(ctx context.Context) error {
+	var maxID sql.NullInt64
+	err := s.db.QueryRowContext(ctx, "SELECT MAX(id) FROM whatsmeow_commands").Scan(&maxID)
+	if err != nil {
+		return err
+	}
+	if !maxID.Valid {
+		return nil
+	}
+	// PostgreSQL: Set sequence next value to max(id) + 1
+	_, err = s.db.ExecContext(ctx,
+		fmt.Sprintf("SELECT setval(pg_get_serial_sequence('whatsmeow_commands', 'id'), %d)", maxID.Int64),
+	)
+	return err
+}
+
+func sqlNullString(s string) sql.NullString {
+	if s == "" {
+		return sql.NullString{Valid: false}
+	}
+	return sql.NullString{String: s, Valid: true}
 }

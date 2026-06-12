@@ -86,7 +86,7 @@ func (m *Manager) runJob(job config.CronJobConfig) {
 		log.Printf("[Cron] Job %s skipped: no agent endpoint configured", job.Name)
 		return
 	}
-	
+
 	client := agent.NewClient(&agentCfg, m.jwtGen)
 
 	// 4. Run Agent

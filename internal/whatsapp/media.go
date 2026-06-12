@@ -5,11 +5,11 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	_ "golang.org/x/image/webp"
 	"image"
 	_ "image/gif"
 	"image/jpeg"
 	_ "image/png"
-	_ "golang.org/x/image/webp"
 	"net/http"
 
 	"os"

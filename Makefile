@@ -7,6 +7,7 @@ BINARY_KEYGEN=keygen
 BINARY_MCP=whatsadk-mcp
 BINARY_SIMULATOR=simulator
 BINARY_ADKSIM=adksim
+BINARY_DBUTIL=dbutil
 
 # Directories
 BIN_DIR=bin
@@ -29,6 +30,7 @@ build:
 	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_MCP) ./$(CMD_DIR)/mcp
 	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_SIMULATOR) ./$(CMD_DIR)/simulator
 	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_ADKSIM) ./$(CMD_DIR)/adksim
+	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_DBUTIL) ./$(CMD_DIR)/dbutil
 
 build-mcp:
 	@mkdir -p $(BIN_DIR)

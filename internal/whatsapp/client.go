@@ -84,7 +84,7 @@ func (c *Client) storeRequest(ctx context.Context, userID, uniqueID string, cont
 	path := fmt.Sprintf("whatsmeow/%s/%s/request", userID, uniqueID)
 	metadata := map[string]interface{}{
 		"mime_type": mimeType,
-		"metadata":  map[string]interface{}{
+		"metadata": map[string]interface{}{
 			"is_from_me": isFromMe,
 		},
 	}
@@ -387,7 +387,7 @@ func (c *Client) handleMessage(msg *events.Message) {
 		uniqueID := msg.Info.ID
 		ctx := context.Background()
 		c.storeResponse(ctx, userID, uniqueID, []byte(text), msg.Info.Timestamp, "")
-		
+
 		// If message is sent to ourselves (Note to Self), allow it to be processed
 		if c.wac.Store.ID != nil && userID != c.wac.Store.ID.User {
 			return
@@ -572,23 +572,23 @@ func (c *Client) processAndStoreMedia(ctx context.Context, userID, uniqueID stri
 }
 
 func (c *Client) sendADKParts(ctx context.Context, chat types.JID, userID string, uniqueID string, parts []agent.Part) {
-        // Pre-check for silent ignore instruction
-        for _, part := range parts {
-                if part.InlineData != nil && part.InlineData.MimeType == agent.MimeTypeSilentIgnore {
-                        reason := "No reason provided"
-                        if part.InlineData.Data != "" {
-                                if decoded, err := base64.StdEncoding.DecodeString(part.InlineData.Data); err == nil {
-                                        reason = string(decoded)
-                                }
-                        }
-                        c.log.Infof("Silently ignoring message from %s. Reason: %s", userID, reason)
-                        c.storeResponse(ctx, userID, uniqueID, []byte(reason), time.Now(), "Ignored: "+reason)
-                        return
-                }
-        }
+	// Pre-check for silent ignore instruction
+	for _, part := range parts {
+		if part.InlineData != nil && part.InlineData.MimeType == agent.MimeTypeSilentIgnore {
+			reason := "No reason provided"
+			if part.InlineData.Data != "" {
+				if decoded, err := base64.StdEncoding.DecodeString(part.InlineData.Data); err == nil {
+					reason = string(decoded)
+				}
+			}
+			c.log.Infof("Silently ignoring message from %s. Reason: %s", userID, reason)
+			c.storeResponse(ctx, userID, uniqueID, []byte(reason), time.Now(), "Ignored: "+reason)
+			return
+		}
+	}
 
-        var caption string
-        hasSentMedia := false
+	var caption string
+	hasSentMedia := false
 	for _, part := range parts {
 		if part.Text != "" {
 			if !hasSentMedia {
