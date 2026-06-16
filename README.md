@@ -79,8 +79,8 @@ make build
 | `OAUTH_SPA_URL` | No | SPA base URL for OAuth redirect (e.g., `https://chat.myadk.app`) |
 | `VERIFICATION_ENABLED` | No | Enable reverse OTP verification (`true`) |
 | `VERIFICATION_CALLBACK_TIMEOUT` | No | Timeout for verification callback HTTP requests (default: `10s`) |
-| `WHATSAPP_STORE_DSN` | No | PostgreSQL connection string for WhatsApp session storage |
-| `VERIFICATION_DATABASE_URL` | No | PostgreSQL connection string for blacklist store |
+| `WHATSAPP_STORE_DSN` | No | PostgreSQL or SurrealDB DSN (set to "surrealdb" to use dedicated config below) |
+| `VERIFICATION_DATABASE_URL` | No | PostgreSQL or SurrealDB DSN for blacklist store |
 | `WABA_ENABLED` | No | Enable official WABA gateway (`true`) |
 | `WABA_PORT` | No | Port for WABA webhook listener (default: `8081`) |
 | `WABA_VERIFY_TOKEN` | No | Meta Webhook Verify Token |
@@ -392,14 +392,15 @@ The `whatsmeow` library automatically manages session and contact data.
 
 | Feature | Handled By | Default Storage Behavior |
 | :--- | :--- | :--- |
-| **Sessions & Keys** | `sqlstore` | Automatically saved to DB. |
+| **Sessions & Keys** | `sqlstore` / `surrealStore` | Automatically saved to DB. |
 | **Contacts** | App State Sync | Automatically saved to `whatsmeow_contacts`. |
-| **Messages** | `filesys` table | Persistent storage for requests and responses. |
+| **Messages** | `filesys` table / collection | Persistent storage for requests and responses. |
 
 ### Schema: `filesys`
 
-The `filesys` table stores both incoming messages (requests) and outgoing responses.
+The `filesys` table/collection stores both incoming messages (requests) and outgoing responses.
 
+#### PostgreSQL
 ```sql
 CREATE TABLE filesys (
     path    TEXT PRIMARY KEY,           -- Format: whatsmeow/<phone>/<uniqueID>/<request|response>
@@ -411,10 +412,23 @@ CREATE TABLE filesys (
 CREATE INDEX idx_filesys_metadata ON filesys USING GIN (metadata);
 ```
 
+#### SurrealDB
+```surrealql
+-- Table is dynamically/schemalessly defined. 
+-- Record ID is derived from the MD5 hash of the path: filesys:<md5(path)>
+DEFINE TABLE filesys SCHEMALESS;
+-- Document Fields:
+--   path: string
+--   metadata: string (JSON stringified metadata)
+--   content: bytes
+--   tmstamp: datetime
+```
+
 ### Schema: `whatsmeow_contacts`
 
-The `whatsmeow_contacts` table is automatically populated and updated as `whatsmeow` receives sync events from WhatsApp.
+The `whatsmeow_contacts` table/collection is automatically populated and updated as `whatsmeow` receives sync events from WhatsApp.
 
+#### PostgreSQL
 ```sql
 CREATE TABLE whatsmeow_contacts (
     our_jid       TEXT, -- The JID of the local user session
@@ -427,10 +441,24 @@ CREATE TABLE whatsmeow_contacts (
 );
 ```
 
+#### SurrealDB
+```surrealql
+-- Record ID is derived from the MD5 hash of our_jid + "_" + their_jid: whatsmeow_contacts:<md5(our_jid + "_" + their_jid)>
+DEFINE TABLE whatsmeow_contacts SCHEMALESS;
+-- Document Fields:
+--   our_jid: string
+--   their_jid: string
+--   full_name: string
+--   short_name: string
+--   push_name: string
+--   business_name: string
+```
+
 ### Global Blacklist
 
-Users added to the PostgreSQL blacklist are blocked from all interactions. Manage entries directly via `psql`:
+Users added to the blacklist are blocked from all interactions. Manage entries directly:
 
+#### PostgreSQL
 ```bash
 # Add a blacklisted number or LID
 psql "$VERIFICATION_DATABASE_URL" -c "INSERT INTO blacklisted_numbers (phone, reason) VALUES ('13061129773287', 'spam') ON CONFLICT DO NOTHING;"
@@ -442,12 +470,30 @@ psql "$VERIFICATION_DATABASE_URL" -c "DELETE FROM blacklisted_numbers WHERE phon
 psql "$VERIFICATION_DATABASE_URL" -c "SELECT * FROM blacklisted_numbers;"
 ```
 
+#### SurrealDB
+```bash
+# Add a blacklisted number or LID
+curl -X POST -u "root:rootpassword" -H "NS: whatsadk" -H "DB: whatsadk" -d "UPSERT blacklisted_numbers:13061129773287 SET phone = '13061129773287', reason = 'spam', created_at = time::now();" http://localhost:8000/sql
+
+# Remove a blacklisted number
+curl -X POST -u "root:rootpassword" -H "NS: whatsadk" -H "DB: whatsadk" -d "DELETE blacklisted_numbers:13061129773287;" http://localhost:8000/sql
+
+# List all blacklisted numbers
+curl -X POST -u "root:rootpassword" -H "NS: whatsadk" -H "DB: whatsadk" -d "SELECT * FROM blacklisted_numbers;" http://localhost:8000/sql
+```
+
 ### Manual Contact Export
 
-If the database is running in a Docker container (e.g., `whatsadk-db`), you can export the contact list to a text file:
+If the database is running in a Docker container, you can export the contact list to a text file:
 
+#### PostgreSQL
 ```bash
 docker exec -i whatsadk-db psql -U postgres -d <database_name> -c "SELECT * FROM whatsmeow_contacts;" > contacts.txt
+```
+
+#### SurrealDB
+```bash
+docker exec -i whatsadk-surreal surreal sql --endpoint http://localhost:8000 --ns whatsadk --db whatsadk --user root --pass rootpassword "SELECT * FROM whatsmeow_contacts;" > contacts.txt
 ```
 
 ## Model Context Protocol (MCP)

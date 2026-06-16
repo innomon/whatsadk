@@ -15,8 +15,8 @@ This document describes the architecture of **WhatsADK**, a Go gateway that brid
 │  WhatsApp    │◀────────▶│        WhatsADK Gateway      │────────▶│  ADK Agent    │
 │  Users       │  whatsmeow│      (Multi-Device or WABA)  │  HTTP   │  Service      │
 │              │  (WebSocket)│  ┌────────┐  ┌───────────┐ │  REST   │  (Remote)     │
-└──────────────┘          │  │PostgreSQL│  │ JWT Auth  │ │  /SSE   └───────────────┘
-     or                   │  │ Session  │  │ (RS256)   │ │
+└──────────────┘          │  │PG/Surreal│  │ JWT Auth  │ │  /SSE   └───────────────┘
+     or                   │  │ Storage  │  │ (RS256)   │ │
 ┌──────────────┐          │  └────┬───┘  └───────────┘ │
 │ Meta Cloud   │◀────────▶│       │      ┌──────────────┐      │          ┌───────────────┐
 │ API (WABA)   │  HTTPS   │       │      │ Verification │──────│─────────▶│  3rd-Party    │
@@ -94,7 +94,7 @@ All dependencies are wired manually — no DI framework is used.
 The `main.go` file implements a Model Context Protocol server:
 
 1. Loads configuration via `config.Load()`
-2. Connects to the shared PostgreSQL database via `internal/store`
+2. Connects to the shared PostgreSQL or SurrealDB database via `internal/store`
 3. Exposes tools for external agents:
     - `blacklist_add`: Adds a number to the local `blacklisted_numbers` table **and** enqueues a command for the Gateway to perform a remote block on WhatsApp.
     - `blacklist_remove`: Removes a number from local blacklist **and** enqueues a remote unblock command.
@@ -123,7 +123,7 @@ After loading YAML, applies sensible defaults and overrides from environment var
 Wraps the [whatsmeow](https://github.com/tulir/whatsmeow) library and provides media transformation:
 
 - **QR code authentication** — displays QR in terminal on first run
-- **Persistent sessions** — stored in PostgreSQL via `sqlstore`
+- **Persistent sessions** — stored in PostgreSQL (via `sqlstore`) or SurrealDB (via `surrealStore`)
 - **Two-Way Media Bridge (`media.go`)** — Normalizes media and metadata between WhatsApp and ADK:
     - **Normalization Layer:** Transforms platform-specific formats into a unified ADK standard (`agent.Part`).
     - **Inbound (WA ➔ ADK):** 
@@ -238,7 +238,7 @@ whatsapp.Client.handleMessage() or waba.WebhookHandler.onMessageParts()
     │
     ├─ Skip: from self, group chat, empty text (if applicable)
     │
-    ├─ Check: Is user blacklisted? (PostgreSQL)
+    ├─ Check: Is user blacklisted? (PostgreSQL/SurrealDB)
     │
     ├─ Resolve: If LID, attempt resolution to PN (Cache/Lookup - Multi-Device only)
     │
@@ -311,6 +311,7 @@ SPA (Browser)                  WhatsApp User             Gateway                
 |---|---|
 | [whatsmeow](https://github.com/tulir/whatsmeow) | WhatsApp Web multi-device API (WebSocket) |
 | [lib/pq](https://github.com/lib/pq) | PostgreSQL driver for WhatsApp session persistence |
+| [surrealdb.go](https://github.com/surrealdb/surrealdb.go) | Go client for SurrealDB backend persistence |
 | [golang-jwt/jwt/v5](https://github.com/golang-jwt/jwt) | RS256 & EdDSA JWT token generation and parsing |
 | [qrterminal](https://github.com/mdp/qrterminal) | QR code rendering in terminal |
 | [yaml.v3](https://pkg.go.dev/gopkg.in/yaml.v3) | YAML configuration parsing |
@@ -330,7 +331,7 @@ The project uses two distinct cryptographic standards to balance industry compat
 - **TOTP Binding** — The Ed25519 public key is bound to the TOTP generation process, ensuring that codes are valid only when presented alongside the specific device key used during OAuth.
 - **API Key fallback** — when JWT is not configured, a static API key can be used (less secure, suitable for development).
 - **Verification token validation** — incoming tokens are cryptographically verified against pre-registered app public keys. Phone number matching prevents token forwarding attacks.
-- **Global Blacklist** — users can be globally blocked across the gateway via PostgreSQL. Blocking applies to both phone numbers and their associated LIDs.
+- **Global Blacklist** — users can be globally blocked across the gateway via PostgreSQL or SurrealDB. Blocking applies to both phone numbers and their associated LIDs.
 - **Access control** — allows all users by default. If a whitelist is provided, only whitelisted users or Indian (+91) numbers are allowed. LIDs are automatically resolved to phone numbers to ensure they match whitelist/country rules. Non-allowed users receive a rejection message.
 
 ## Memory Persistence Patterns

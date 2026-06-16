@@ -12,7 +12,7 @@ make build-mcp
 This will create the `whatsadk-mcp` binary in the `bin/` directory.
 
 ### 2. Configuration
-The MCP server requires access to the same database as the main Gateway. Ensure your `config.yaml` is correctly configured with the PostgreSQL DSN.
+The MCP server requires access to the same database as the main Gateway. Ensure your `config.yaml` is correctly configured with the PostgreSQL DSN or the SurrealDB configuration block.
 
 ## 🚀 How to Run (Manual)
 The MCP server uses `stdio` transport. You can test it manually (though it's designed for machine interaction):

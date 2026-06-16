@@ -12,6 +12,15 @@ adk:
   streaming: false
   # api_key: set via ADK_API_KEY environment variable for authenticated endpoints
 
+# Optional: Dedicated SurrealDB configuration block
+# If configured and store_dsn/database_url is empty or "surrealdb", SurrealDB is used.
+#surrealdb:
+#  url: "ws://localhost:8000"      # Support ws://, wss://, http://, https://
+#  username: "root"
+#  password: "rootpassword"
+#  namespace: "whatsadk"
+#  database: "whatsadk"
+
 auth:
   jwt:
     # private_key_path: "secrets/jwt_private.pem"

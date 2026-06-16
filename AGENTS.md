@@ -15,7 +15,7 @@
 - internal/ - Private application code
 - pkg/ - Public library code
 - *_test.go - Test files (same package)
-- use on postgres database, **DO NOT** use sqilite for this project.
+- use on postgres database or SurrealDB, **DO NOT** use sqlite for this project.
 
 
 ## Code Style
