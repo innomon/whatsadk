@@ -4,30 +4,43 @@ This document describes the architecture of **WhatsADK**, a Go gateway that brid
 
 ## High-Level Overview
 
-```
-                                      ┌──────────────────┐
-                                      │ External Agents  │
-                                      │ (Claude, etc.)   │
-                                      └────────┬─────────┘
-                                               │
-                                               ▼ MCP (stdio)
-┌──────────────┐          ┌──────────────────────────────┐          ┌───────────────┐
-│  WhatsApp    │◀────────▶│        WhatsADK Gateway      │────────▶│  ADK Agent    │
-│  Users       │  whatsmeow│      (Multi-Device or WABA)  │  HTTP   │  Service      │
-│              │  (WebSocket)│  ┌────────┐  ┌───────────┐ │  REST   │  (Remote)     │
-└──────────────┘          │  │PG/Surreal│  │ JWT Auth  │ │  /SSE   └───────────────┘
-     or                   │  │ Storage  │  │ (RS256)   │ │
-┌──────────────┐          │  └────┬───┘  └───────────┘ │
-│ Meta Cloud   │◀────────▶│       │      ┌──────────────┐      │          ┌───────────────┐
-│ API (WABA)   │  HTTPS   │       │      │ Verification │──────│─────────▶│  3rd-Party    │
-└──────────────┘ Webhook  │       │      │ Handler      │      │ Callback │  Apps         │
-                          │       │      └──────────────┘      │          └───────────────┘
-                          └───────┼──────────────────────┘
-                                  │
-                          ┌───────┴────────┐
-                          │  whatsadk-mcp  │
-                          │  (MCP Server)  │
-                          └────────────────┘
+```mermaid
+graph TD
+    %% Styling
+    classDef main fill:#0d47a1,stroke:#002171,stroke-width:2px,color:#ffffff;
+    classDef db fill:#3e2723,stroke:#1b0000,stroke-width:2px,color:#ffffff;
+    classDef ext fill:#1b5e20,stroke:#003300,stroke-width:2px,color:#ffffff;
+    classDef mcp fill:#e65100,stroke:#b23c00,stroke-width:2px,color:#ffffff;
+
+    %% Nodes
+    ext_agents["External Agents (Claude, etc.)"]:::ext
+    wa_users["WhatsApp Users"]:::ext
+    waba_api["Meta Cloud API (WABA)"]:::ext
+    adk_agent["ADK Agent Service (Remote)"]:::ext
+    third_party["3rd-Party Apps"]:::ext
+
+    subgraph gateway["WhatsADK Gateway (Multi-Device or WABA)"]
+        gw_core["Gateway Core"]:::main
+        storage["PG/Surreal Storage"]:::db
+        jwt_auth["JWT Auth (RS256)"]:::main
+        verify_handler["Verification Handler"]:::main
+    end
+
+    mcp_server["whatsadk-mcp (MCP Server)"]:::mcp
+
+    %% Connections
+    ext_agents -->|"MCP (stdio)"| mcp_server
+    mcp_server <-->|"Database Sync / IPC"| storage
+
+    wa_users <-->|"whatsmeow (WebSocket)"| gw_core
+    waba_api <-->|"HTTPS Webhook"| gw_core
+
+    gw_core <--> storage
+    gw_core -.->|"Validate"| jwt_auth
+    gw_core --> verify_handler
+
+    gw_core -->|"HTTP REST / SSE"| adk_agent
+    verify_handler -->|"Callback JWT"| third_party
 ```
 
 The gateway provides two entry points for WhatsApp connectivity:
