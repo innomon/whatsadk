@@ -665,7 +665,8 @@ The utility exports and restores the following tables across both PostgreSQL and
 
 ## Architecture
 
-For a detailed architecture overview, see [ARCHITECTURE.md](ARCHITECTURE.md).
+- For a detailed architecture overview, see [ARCHITECTURE.md](ARCHITECTURE.md).
+- For a deep dive into the end-to-end user message flow and ADK routing, see [docs/whatsapp_user_interaction.md](docs/whatsapp_user_interaction.md).
 
 ## Dependencies
 
