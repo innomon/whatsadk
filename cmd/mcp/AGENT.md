@@ -89,7 +89,7 @@ Add the following to your MCP configuration file (usually `mcp.json` or `config.
 ### Contacts & Messaging
 - `query_contacts`: Search for WhatsApp contacts by name or JID.
 - `get_recent_messages`: Retrieve recent message logs globally or for a specific user.
-- `send_message`: Send multi-modal messages (text and/or media).
+- `send_message`: Send multi-modal messages (text and/or media). Supports `context_type` (enum: `"recommendation"`, `"notification"`, `"advertisement"`, `"system"`, `"response"`) and `msg_ref` (original request message ID being replied to) to link the reply.
 
 ### Virtual File System (filesys)
 - `filesys_sql_select`: Execute custom SELECT queries for advanced filtering.

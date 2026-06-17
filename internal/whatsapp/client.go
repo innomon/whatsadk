@@ -98,7 +98,7 @@ func (c *Client) storeRequest(ctx context.Context, userID, uniqueID string, cont
 	}
 }
 
-func (c *Client) storeResponse(ctx context.Context, userID, uniqueID string, content []byte, ts time.Time, errStr string) {
+func (c *Client) storeResponse(ctx context.Context, userID, uniqueID string, content []byte, ts time.Time, errStr string, contextType, msgRef string) {
 	if c.store == nil {
 		return
 	}
@@ -106,6 +106,12 @@ func (c *Client) storeResponse(ctx context.Context, userID, uniqueID string, con
 	innerMetadata := map[string]interface{}{}
 	if errStr != "" {
 		innerMetadata["error"] = errStr
+	}
+	if contextType != "" {
+		innerMetadata["context_type"] = contextType
+	}
+	if msgRef != "" {
+		innerMetadata["msg_ref"] = msgRef
 	}
 	metadata := map[string]interface{}{
 		"mime_type": "text/plain",
@@ -225,12 +231,14 @@ func (c *Client) handleCommand(ctx context.Context, cmd store.Command) {
 		result, err = c.RemoteGetBlocklist()
 	case "send_message":
 		var payload struct {
-			JID   string             `json:"jid"`
-			Text  string             `json:"text"`
-			Media []agent.InlineData `json:"media"`
+			JID         string             `json:"jid"`
+			Text        string             `json:"text"`
+			Media       []agent.InlineData `json:"media"`
+			ContextType string             `json:"context_type"`
+			MsgRef      string             `json:"msg_ref"`
 		}
 		if err = json.Unmarshal(cmd.Payload, &payload); err == nil {
-			err = c.SendMessage(ctx, payload.JID, payload.Text, payload.Media)
+			err = c.SendMessage(ctx, payload.JID, payload.Text, payload.Media, payload.ContextType, payload.MsgRef)
 		}
 	default:
 		err = fmt.Errorf("unknown command: %s", cmd.Command)
@@ -289,7 +297,7 @@ func (c *Client) RemoteUnblock(jidStr string) error {
 	return nil
 }
 
-func (c *Client) SendMessage(ctx context.Context, jidStr string, text string, media []agent.InlineData) error {
+func (c *Client) SendMessage(ctx context.Context, jidStr string, text string, media []agent.InlineData, contextType, msgRef string) error {
 	jid, err := types.ParseJID(jidStr)
 	if err != nil {
 		if !strings.Contains(jidStr, "@") {
@@ -302,15 +310,18 @@ func (c *Client) SendMessage(ctx context.Context, jidStr string, text string, me
 
 	userID := jid.User
 	uniqueID := fmt.Sprintf("mcp_%d", time.Now().UnixNano())
+	if msgRef != "" {
+		uniqueID = msgRef
+	}
 
 	// Send text if provided
 	if text != "" {
-		c.sendTextMessage(ctx, jid, userID, uniqueID, text)
+		c.sendTextMessage(ctx, jid, userID, uniqueID, text, contextType, msgRef)
 	}
 
 	// Send media if provided
 	for _, m := range media {
-		err := c.sendMediaPart(ctx, jid, userID, uniqueID, &m, "")
+		err := c.sendMediaPart(ctx, jid, userID, uniqueID, &m, "", contextType, msgRef)
 		if err != nil {
 			return fmt.Errorf("failed to send media: %w", err)
 		}
@@ -366,7 +377,7 @@ func (c *Client) handleHistorySync(v *events.HistorySync) {
 			if msg.Info.IsFromMe {
 				// Store as response
 				userID := msg.Info.Chat.User
-				c.storeResponse(ctx, userID, msg.Info.ID, []byte(text), msg.Info.Timestamp, "")
+				c.storeResponse(ctx, userID, msg.Info.ID, []byte(text), msg.Info.Timestamp, "", "", "")
 			} else {
 				// Store as request
 				userID := msg.Info.Sender.User
@@ -391,7 +402,7 @@ func (c *Client) handleMessage(msg *events.Message) {
 		userID := msg.Info.Chat.User
 		uniqueID := msg.Info.ID
 		ctx := context.Background()
-		c.storeResponse(ctx, userID, uniqueID, []byte(text), msg.Info.Timestamp, "")
+		c.storeResponse(ctx, userID, uniqueID, []byte(text), msg.Info.Timestamp, "", "", "")
 
 		// If message is sent to ourselves (Note to Self), allow it to be processed
 		if c.wac.Store.ID != nil && userID != c.wac.Store.ID.User {
@@ -444,7 +455,7 @@ func (c *Client) handleMessage(msg *events.Message) {
 	if c.verifyHandler != nil && auth.IsVerificationToken(text) != nil {
 		response := c.verifyHandler.Handle(ctx, userID, text)
 		if response != "" {
-			c.sendTextMessage(ctx, msg.Info.Chat, userID, uniqueID, response)
+			c.sendTextMessage(ctx, msg.Info.Chat, userID, uniqueID, response, "system", uniqueID)
 			return
 		}
 	}
@@ -456,7 +467,7 @@ func (c *Client) handleMessage(msg *events.Message) {
 			response = "⚠️ Something went wrong processing your AUTH request. Please try again."
 		}
 		if response != "" {
-			c.sendTextMessage(ctx, msg.Info.Chat, userID, uniqueID, response)
+			c.sendTextMessage(ctx, msg.Info.Chat, userID, uniqueID, response, "system", uniqueID)
 		}
 		return
 	}
@@ -464,7 +475,7 @@ func (c *Client) handleMessage(msg *events.Message) {
 	if !c.isUserAllowed(msg.Info.Sender) {
 		c.log.Infof("Blocked message from non-allowed user %s", msg.Info.Sender.String())
 		response := "Sorry, we only entertain friends from India."
-		c.sendTextMessage(ctx, msg.Info.Chat, userID, uniqueID, response)
+		c.sendTextMessage(ctx, msg.Info.Chat, userID, uniqueID, response, "system", uniqueID)
 		return
 	}
 
@@ -489,7 +500,7 @@ func (c *Client) handleMessage(msg *events.Message) {
 	adkResponseParts, err := c.adkClient.ChatParts(ctx, userID, parts)
 	if err != nil {
 		c.log.Errorf("Failed to get agent response: %v", err)
-		c.sendTextMessage(ctx, msg.Info.Chat, userID, uniqueID, "Sorry, I encountered an error processing your message. Please try again.")
+		c.sendTextMessage(ctx, msg.Info.Chat, userID, uniqueID, "Sorry, I encountered an error processing your message. Please try again.", "system", uniqueID)
 		return
 	}
 
@@ -587,7 +598,7 @@ func (c *Client) sendADKParts(ctx context.Context, chat types.JID, userID string
 				}
 			}
 			c.log.Infof("Silently ignoring message from %s. Reason: %s", userID, reason)
-			c.storeResponse(ctx, userID, uniqueID, []byte(reason), time.Now(), "Ignored: "+reason)
+			c.storeResponse(ctx, userID, uniqueID, []byte(reason), time.Now(), "Ignored: "+reason, "system", uniqueID)
 			return
 		}
 	}
@@ -604,19 +615,19 @@ func (c *Client) sendADKParts(ctx context.Context, chat types.JID, userID string
 			} else {
 				// Already sent media, or this is additional text after media
 				// Send as separate message
-				c.sendTextMessage(ctx, chat, userID, uniqueID, part.Text)
+				c.sendTextMessage(ctx, chat, userID, uniqueID, part.Text, "response", uniqueID)
 			}
 			continue
 		}
 
 		if part.InlineData != nil {
 			// Process media
-			err := c.sendMediaPart(ctx, chat, userID, uniqueID, part.InlineData, caption)
+			err := c.sendMediaPart(ctx, chat, userID, uniqueID, part.InlineData, caption, "response", uniqueID)
 			if err != nil {
 				c.log.Errorf("Failed to send media part: %v", err)
 				// If media fails, maybe at least send the caption if it's the first media
 				if !hasSentMedia && caption != "" {
-					c.sendTextMessage(ctx, chat, userID, uniqueID, caption)
+					c.sendTextMessage(ctx, chat, userID, uniqueID, caption, "response", uniqueID)
 				}
 			}
 			caption = "" // Reset caption after it's used
@@ -626,24 +637,24 @@ func (c *Client) sendADKParts(ctx context.Context, chat types.JID, userID string
 
 	// If we have remaining caption and no media was ever sent
 	if !hasSentMedia && caption != "" {
-		c.sendTextMessage(ctx, chat, userID, uniqueID, caption)
+		c.sendTextMessage(ctx, chat, userID, uniqueID, caption, "response", uniqueID)
 	}
 }
 
-func (c *Client) sendTextMessage(ctx context.Context, chat types.JID, userID string, uniqueID string, text string) {
+func (c *Client) sendTextMessage(ctx context.Context, chat types.JID, userID string, uniqueID string, text string, contextType, msgRef string) {
 	resp, err := c.wac.SendMessage(ctx, chat, &waE2E.Message{
 		Conversation: proto.String(text),
 	})
 	if err != nil {
 		c.log.Errorf("Failed to send text message: %v", err)
-		c.storeResponse(ctx, userID, uniqueID, []byte(text), time.Now(), err.Error())
+		c.storeResponse(ctx, userID, uniqueID, []byte(text), time.Now(), err.Error(), contextType, msgRef)
 	} else {
 		c.log.Infof("Sent text response to %s: %s", userID, truncate(text, 50))
-		c.storeResponse(ctx, userID, uniqueID, []byte(text), resp.Timestamp, "")
+		c.storeResponse(ctx, userID, uniqueID, []byte(text), resp.Timestamp, "", contextType, msgRef)
 	}
 }
 
-func (c *Client) sendMediaPart(ctx context.Context, chat types.JID, userID string, uniqueID string, media *agent.InlineData, caption string) error {
+func (c *Client) sendMediaPart(ctx context.Context, chat types.JID, userID string, uniqueID string, media *agent.InlineData, caption string, contextType, msgRef string) error {
 	data, err := base64.StdEncoding.DecodeString(media.Data)
 	if err != nil {
 		return fmt.Errorf("failed to decode base64 media: %w", err)
@@ -720,7 +731,7 @@ func (c *Client) sendMediaPart(ctx context.Context, chat types.JID, userID strin
 	}
 
 	c.log.Infof("Sent %s response to %s", waMediaType, userID)
-	c.storeResponse(ctx, userID, uniqueID, []byte(fmt.Sprintf("[%s]", waMediaType)), waResp.Timestamp, "")
+	c.storeResponse(ctx, userID, uniqueID, []byte(fmt.Sprintf("[%s]", waMediaType)), waResp.Timestamp, "", contextType, msgRef)
 
 	return nil
 }

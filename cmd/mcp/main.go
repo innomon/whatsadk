@@ -15,9 +15,11 @@ import (
 )
 
 type SendMessageArgs struct {
-	JID   string             `json:"jid"`
-	Text  string             `json:"text,omitempty"`
-	Media []agent.InlineData `json:"media,omitempty"`
+	JID         string             `json:"jid"`
+	Text        string             `json:"text,omitempty"`
+	Media       []agent.InlineData `json:"media,omitempty"`
+	ContextType string             `json:"context_type,omitempty"`
+	MsgRef      string             `json:"msg_ref,omitempty"`
 }
 
 func SendMessage(ctx context.Context, s *store.Store, args SendMessageArgs) (*mcp.CallToolResult, any, error) {
@@ -26,6 +28,20 @@ func SendMessage(ctx context.Context, s *store.Store, args SendMessageArgs) (*mc
 	}
 	if args.Text == "" && len(args.Media) == 0 {
 		return nil, nil, fmt.Errorf("either text or media is required")
+	}
+	if args.MsgRef != "" && args.ContextType == "" {
+		args.ContextType = "response"
+	}
+	if args.ContextType != "" {
+		switch args.ContextType {
+		case "recommendation", "notification", "advertisement", "system", "response":
+			// valid
+		default:
+			return nil, nil, fmt.Errorf("invalid context_type: %q. Must be one of: recommendation, notification, advertisement, system, response", args.ContextType)
+		}
+	}
+	if args.ContextType == "response" && args.MsgRef == "" {
+		return nil, nil, fmt.Errorf("msg_ref is required when context_type is 'response'")
 	}
 
 	cmdID, err := s.EnqueueCommand(ctx, "send_message", args)
@@ -595,7 +611,7 @@ func main() {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "send_message",
-		Description: "Send a multi-modal message (text and/or media) to a WhatsApp user",
+		Description: "Send a multi-modal message (text and/or media) to a WhatsApp user. Supports context_type (enum: recommendation, notification, advertisement, system, response) and msg_ref (original message ID being replied to) to link the reply.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args SendMessageArgs) (*mcp.CallToolResult, any, error) {
 		return SendMessage(ctx, s, args)
 	})

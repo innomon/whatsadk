@@ -140,7 +140,10 @@ func main() {
 				respPath := fmt.Sprintf("waba/%s/%s/response", sender, uniqueID)
 				respMetadata := map[string]interface{}{
 					"mime_type": "text/plain",
-					"metadata":  map[string]interface{}{},
+					"metadata": map[string]interface{}{
+						"context_type": "response",
+						"msg_ref":      uniqueID,
+					},
 				}
 				s.PutFile(ctx, respPath, respMetadata, []byte(part.Text), time.Now())
 				continue
@@ -172,7 +175,11 @@ func main() {
 					respPath := fmt.Sprintf("waba/%s/%s/response_media", sender, uniqueID)
 					respMetadata := map[string]interface{}{
 						"mime_type": part.InlineData.MimeType,
-						"metadata":  map[string]interface{}{"media_id": mediaID},
+						"metadata": map[string]interface{}{
+							"media_id":     mediaID,
+							"context_type": "response",
+							"msg_ref":      uniqueID,
+						},
 					}
 					s.PutFile(ctx, respPath, respMetadata, []byte("[IMAGE]"), time.Now())
 				} else {
