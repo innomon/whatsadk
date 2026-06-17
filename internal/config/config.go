@@ -45,13 +45,22 @@ type CronJobConfig struct {
 	Agent    ADKConfig `yaml:"agent,omitempty"`
 }
 
+// VerificationConfig holds configuration settings for the Reverse OTP (Mobile-Originated)
+// verification flow. This allows the gateway to verify phone numbers via incoming WhatsApp
+// tokens and signed HTTP callbacks.
 type VerificationConfig struct {
-	Enabled         bool                       `yaml:"enabled"`
-	CallbackTimeout string                     `yaml:"callback_timeout"`
-	DatabaseURL     string                     `yaml:"database_url"`
-	DevOpsNumbers   []string                   `yaml:"devops_numbers"`
-	Apps            map[string]AppVerifyConfig `yaml:"apps"`
-	Messages        VerificationMessages       `yaml:"messages"`
+	// Enabled controls whether the Reverse OTP verification handler is active.
+	Enabled bool `yaml:"enabled"`
+	// CallbackTimeout sets the timeout duration for HTTP callback requests to verifying applications.
+	CallbackTimeout string `yaml:"callback_timeout"`
+	// DatabaseURL specifies the DSN for the PostgreSQL/SurrealDB storage used for verification metadata and blacklists.
+	DatabaseURL string `yaml:"database_url"`
+	// DevOpsNumbers lists phone numbers that can bypass sender-token mismatch checks.
+	DevOpsNumbers []string `yaml:"devops_numbers"`
+	// Apps maps application names to their respective cryptographic public key configurations.
+	Apps map[string]AppVerifyConfig `yaml:"apps"`
+	// Messages configures custom templates for user-facing status responses sent on WhatsApp.
+	Messages VerificationMessages `yaml:"messages"`
 }
 
 type AppVerifyConfig struct {

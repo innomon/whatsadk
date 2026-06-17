@@ -42,11 +42,16 @@ type Client struct {
 	log           waLog.Logger
 }
 
-func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client, verifyHandler *verification.Handler, oauthHandler *auth.OAuthHandler, store *store.Store) (*Client, error) {
+func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client, verifyHandler *verification.Handler, oauthHandler *auth.OAuthHandler, gatewayStore *store.Store) (*Client, error) {
 	rawLog := waLog.Stdout("WhatsApp", cfg.WhatsApp.LogLevel, true)
 	log := NewFilteredLogger(rawLog, "")
 
-	container, err := sqlstore.New(ctx, "postgres", cfg.WhatsApp.StoreDSN, log)
+	dialect := "postgres"
+	if store.IsSurrealDB(cfg.WhatsApp.StoreDSN) {
+		dialect = "surrealdb"
+	}
+
+	container, err := sqlstore.New(ctx, dialect, cfg.WhatsApp.StoreDSN, log)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create store: %w", err)
 	}
@@ -63,7 +68,7 @@ func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client, verif
 		adkClient:     adkClient,
 		verifyHandler: verifyHandler,
 		oauthHandler:  oauthHandler,
-		store:         store,
+		store:         gatewayStore,
 		mediaProc:     NewProcessor(),
 		cfg:           cfg,
 		log:           log,

@@ -45,7 +45,7 @@ type sqlStore struct {
 	db *sql.DB
 }
 
-func isSurrealDB(dsn string) bool {
+func IsSurrealDB(dsn string) bool {
 	return strings.HasPrefix(dsn, "surrealdb://") ||
 		strings.HasPrefix(dsn, "ws://") ||
 		strings.HasPrefix(dsn, "wss://") ||
@@ -54,7 +54,7 @@ func isSurrealDB(dsn string) bool {
 }
 
 func Open(dsn string) (*Store, error) {
-	if isSurrealDB(dsn) {
+	if IsSurrealDB(dsn) {
 		backend, err := openSurrealDB(dsn)
 		if err != nil {
 			return nil, err

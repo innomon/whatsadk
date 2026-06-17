@@ -18,7 +18,7 @@ func openTestStore(t *testing.T) *Store {
 		t.Fatalf("failed to open store: %v", err)
 	}
 	ctx := context.Background()
-	if isSurrealDB(dsn) {
+	if IsSurrealDB(dsn) {
 		_, _ = s.QueryFilesys(ctx, "DELETE FROM blacklisted_numbers")
 		_, _ = s.QueryFilesys(ctx, "DELETE FROM whatsmeow_contacts")
 		_, _ = s.QueryFilesys(ctx, "DELETE FROM whatsmeow_commands")
