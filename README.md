@@ -519,6 +519,7 @@ WhatsADK includes an MCP server that allows AI agents (like Claude Code, Cursor,
 - `query_contacts`: Search for WhatsApp contacts by name or JID.
 - `get_message_logs`: Retrieve recent message logs for a specific user.
 - `send_message`: Send multi-modal messages (text/media). Supports `context_type` (enum: `"recommendation"`, `"notification"`, `"advertisement"`, `"system"`, `"response"`) and `msg_ref` (original message ID being replied to) to link the reply.
+- `get_database_type`: Discover the active database type (postgres or surrealdb).
 - `filesys_sql_select`: Execute custom SELECT queries on message logs.
 - `filesys_put`: Create or update entries in the virtual file system.
 - `filesys_get`: Retrieve specific entries by path.

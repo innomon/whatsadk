@@ -137,6 +137,17 @@ func (s *Store) GetLatestGlobalMessages(ctx context.Context, limit int) ([]FileE
 	return s.backend.GetLatestGlobalMessages(ctx, limit)
 }
 
+func (s *Store) DatabaseType() string {
+	switch s.backend.(type) {
+	case *sqlStore:
+		return "postgres"
+	case *surrealStore:
+		return "surrealdb"
+	default:
+		return "unknown"
+	}
+}
+
 func (s *Store) QueryFilesys(ctx context.Context, query string, args ...interface{}) ([]map[string]interface{}, error) {
 	return s.backend.QueryFilesys(ctx, query, args...)
 }

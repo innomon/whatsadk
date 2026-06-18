@@ -271,6 +271,19 @@ func GetLogs(ctx context.Context, s *store.Store, args GetLogsArgs) (*mcp.CallTo
 	}, nil, nil
 }
 
+type GetDatabaseTypeArgs struct{}
+
+func GetDatabaseType(ctx context.Context, s *store.Store, _ GetDatabaseTypeArgs) (*mcp.CallToolResult, any, error) {
+	dbType := s.DatabaseType()
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: fmt.Sprintf("database_type: %s", dbType),
+			},
+		},
+	}, nil, nil
+}
+
 type FileSysSQLSelectArgs struct {
 	Query string `json:"query"`
 }
@@ -614,6 +627,13 @@ func main() {
 		Description: "Send a multi-modal message (text and/or media) to a WhatsApp user. Supports context_type (enum: recommendation, notification, advertisement, system, response) and msg_ref (original message ID being replied to) to link the reply.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args SendMessageArgs) (*mcp.CallToolResult, any, error) {
 		return SendMessage(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_database_type",
+		Description: "Discover the database type (postgres or surrealdb) used by the active store.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args GetDatabaseTypeArgs) (*mcp.CallToolResult, any, error) {
+		return GetDatabaseType(ctx, s, args)
 	})
 
 	mcp.AddTool(server, &mcp.Tool{

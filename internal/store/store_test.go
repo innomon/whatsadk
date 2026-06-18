@@ -207,3 +207,11 @@ func TestFilesys(t *testing.T) {
 		t.Errorf("expected file to be deleted")
 	}
 }
+
+func TestDatabaseType(t *testing.T) {
+	s := openTestStore(t)
+	dbType := s.DatabaseType()
+	if dbType != "postgres" && dbType != "surrealdb" {
+		t.Errorf("unexpected database type: %s", dbType)
+	}
+}

@@ -90,6 +90,7 @@ Add the following to your MCP configuration file (usually `mcp.json` or `config.
 - `query_contacts`: Search for WhatsApp contacts by name or JID.
 - `get_recent_messages`: Retrieve recent message logs globally or for a specific user.
 - `send_message`: Send multi-modal messages (text and/or media). Supports `context_type` (enum: `"recommendation"`, `"notification"`, `"advertisement"`, `"system"`, `"response"`) and `msg_ref` (original request message ID being replied to) to link the reply.
+- `get_database_type`: Discover the active database backend type (`postgres` or `surrealdb`).
 
 ### Virtual File System (filesys)
 - `filesys_sql_select`: Execute custom SELECT queries for advanced filtering.
@@ -97,6 +98,104 @@ Add the following to your MCP configuration file (usually `mcp.json` or `config.
 - `filesys_get`: Retrieve specific entries by path.
 - `filesys_delete`: Remove entries from the file system.
 - `filesys_list`: List entries with prefix filtering.
+
+## 💾 Querying filesys with SQL/SurrealQL Dialects
+
+Since the `filesys_sql_select` tool forwards the query directly to the database backend without translation, you must construct the query depending on the database engine.
+
+Use the `get_database_type` tool first to discover the active database type (`postgres` or `surrealdb`).
+
+### 🗄 filesys Table/Collection Schema
+
+#### PostgreSQL
+```sql
+CREATE TABLE filesys (
+    path     TEXT PRIMARY KEY,            -- Format: whatsmeow/<phone>/<uniqueID>/<request|response>
+    metadata JSONB,                       -- JSON Object containing mime_type, errors, etc.
+    content  BYTEA,                       -- Message content bytes (encoded text or binary data)
+    tmstamp  TIMESTAMPTZ DEFAULT NOW()   -- Log creation timestamp
+);
+
+CREATE INDEX idx_filesys_metadata ON filesys USING GIN (metadata);
+```
+
+#### SurrealDB
+```surrealql
+-- The table is dynamically/schemalessly defined.
+-- Record ID is derived from the MD5 hash of the path: filesys:<md5(path)>
+DEFINE TABLE filesys SCHEMALESS;
+-- Document Fields:
+--   path: string                         -- Format: whatsmeow/<phone>/<uniqueID>/<request|response>
+--   metadata: string                     -- JSON stringified metadata object
+--   content: bytes                       -- Message content bytes
+--   tmstamp: datetime                    -- Log creation timestamp
+```
+
+Here are dialect-specific SQL examples for common operations on the `filesys` schema:
+
+### 1. Retrieve the Latest 5 Logs
+* **Postgres**:
+  ```sql
+  SELECT path, metadata->>'mime_type' AS mime_type, tmstamp 
+  FROM filesys 
+  ORDER BY tmstamp DESC 
+  LIMIT 5
+  ```
+* **SurrealDB**:
+  ```surrealql
+  SELECT path, metadata, tmstamp 
+  FROM filesys 
+  ORDER BY tmstamp DESC 
+  LIMIT 5
+  ```
+
+### 2. Search Messages by Path Prefix (e.g. a particular phone number)
+* **Postgres**:
+  ```sql
+  SELECT path, tmstamp 
+  FROM filesys 
+  WHERE path LIKE 'whatsmeow/1234567890/%' 
+  ORDER BY tmstamp DESC
+  ```
+* **SurrealDB**:
+  ```surrealql
+  SELECT path, tmstamp 
+  FROM filesys 
+  WHERE path CONTAINS 'whatsmeow/1234567890/' 
+  ORDER BY tmstamp DESC
+  ```
+
+### 3. Filter by Metadata Fields (JSON / Document search)
+In PostgreSQL, `metadata` is stored as a native `JSONB` column. In SurrealDB, it is stored as a JSON-encoded string.
+* **Postgres**:
+  ```sql
+  SELECT path, tmstamp 
+  FROM filesys 
+  WHERE metadata->>'mime_type' = 'text/plain' 
+  ORDER BY tmstamp DESC
+  ```
+* **SurrealDB**:
+  ```surrealql
+  SELECT path, tmstamp 
+  FROM filesys 
+  WHERE metadata CONTAINS '"mime_type":"text/plain"' 
+  ORDER BY tmstamp DESC
+  ```
+
+### 4. Search Content by Substring (Text Message)
+* **Postgres** (Note: `content` is a `BYTEA` column in Postgres, so it must be cast/encoded to match text):
+  ```sql
+  SELECT path, encode(content, 'escape') AS message 
+  FROM filesys 
+  WHERE encode(content, 'escape') LIKE '%hello%'
+  ```
+* **SurrealDB**:
+  ```surrealql
+  SELECT path, content 
+  FROM filesys 
+  WHERE content CONTAINS 'hello'
+  ```
+
 
 ### Router & App Management
 - `router_get_apps`: Retrieve provisioned apps for a user.
