@@ -197,6 +197,58 @@ In PostgreSQL, `metadata` is stored as a native `JSONB` column. In SurrealDB, it
   ```
 
 
+## 📂 Virtual File System (filesys) Put/Get Examples
+
+Below are JSON examples showing how to use the virtual file system tools (`filesys_put` and `filesys_get`) to write and read files with associated metadata.
+
+### 1. `filesys_put` Example
+**Arguments:**
+```json
+{
+  "path": "whatsmeow/1234567890/msg_09876/request",
+  "content": "Hello, this is a message content.",
+  "metadata": {
+    "mime_type": "text/plain",
+    "sender_name": "Alice"
+  }
+}
+```
+
+**Response (Success):**
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "Successfully stored entry at whatsmeow/1234567890/msg_09876/request"
+    }
+  ]
+}
+```
+
+### 2. `filesys_get` Example
+**Arguments:**
+```json
+{
+  "path": "whatsmeow/1234567890/msg_09876/request"
+}
+```
+
+**Response (Success):**
+The metadata is returned structured under a standard `sql.NullString` JSON block:
+```json
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\n  \"path\": \"whatsmeow/1234567890/msg_09876/request\",\n  \"metadata\": {\n    \"String\": \"{\\\"mime_type\\\":\\\"text/plain\\\",\\\"sender_name\\\":\\\"Alice\\\"}\",\n    \"Valid\": true\n  },\n  \"content\": \"SGVsbG8sIHRoaXMgaXMgYSBtZXNzYWdlIGNvbnRlbnQu\",\n  \"timestamp\": \"2026-06-18T19:40:05Z\"\n}"
+    }
+  ]
+}
+```
+*Note: The `content` field contains the Base64-encoded representation of the content bytes.*
+
+
 ### Router & App Management
 - `router_get_apps`: Retrieve provisioned apps for a user.
 - `router_set_apps`: Provision apps for a user.
