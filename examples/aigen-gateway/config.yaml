@@ -1,0 +1,30 @@
+# Configuration for WhatsApp-ADK Gateway connected to aigen-app
+
+whatsapp:
+  # Connection string for WhatsApp session storage
+  store_dsn: "postgres://postgres:whatsadk@localhost:5433/whatsadk?sslmode=disable"
+  log_level: "INFO"
+  whitelisted_users: []
+
+adk:
+  # The endpoint of the adk2app gateway in aigen-app
+  # In production, replace with your running aigen-app instance hostname and port.
+  endpoint: "http://localhost:8080/api/adk2app"
+  
+  # Target the permission-aware RouterAgent defined inside aigen-app
+  app_name: "RouterAgent"
+  
+  # Enable SSE streaming (recommended for a rich, interactive chat experience)
+  streaming: true
+
+auth:
+  jwt:
+    # Path to Gateway's private RSA PEM key. Every request to aigen-app is signed 
+    # with this key (RS256 JWT) so aigen-app can verify it using the configured public key.
+    private_key_path: "secrets/jwt_private.pem"
+    issuer: "whatsadk-gateway"
+    audience: "aigen-app"
+    ttl: "2m"
+
+verification:
+  database_url: "postgres://postgres:whatsadk@localhost:5433/whatsadk?sslmode=disable"
