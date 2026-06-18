@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"github.com/innomon/whatsadk/internal/auth"
 	"github.com/innomon/whatsadk/internal/config"
 	"github.com/innomon/whatsadk/internal/cron"
+	"github.com/innomon/whatsadk/internal/logger"
 	"github.com/innomon/whatsadk/internal/store"
 	"github.com/innomon/whatsadk/internal/verification"
 	"github.com/innomon/whatsadk/internal/whatsapp"
@@ -26,6 +26,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+
+	appLogger, err := logger.Init(cfg)
+	if err != nil {
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+	appLogger.Info("Structured logging initialized")
 
 	if cfg.ADK.Endpoint == "" {
 		fmt.Println("Error: ADK endpoint is required")
@@ -78,14 +84,13 @@ func main() {
 			timeout = 10 * time.Second
 		}
 
-		logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 		verifyHandler = verification.NewHandler(
 			keyRegistry,
 			jwtGen,
 			gwStore,
 			cfg.Verification,
 			&http.Client{Timeout: timeout},
-			logger,
+			appLogger,
 		)
 		fmt.Printf("🔑 Verification enabled (%d app(s) registered)\n", len(cfg.Verification.Apps))
 	} else {

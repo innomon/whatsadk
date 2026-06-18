@@ -12,6 +12,7 @@ import (
 	"github.com/innomon/whatsadk/internal/agent"
 	"github.com/innomon/whatsadk/internal/auth"
 	"github.com/innomon/whatsadk/internal/config"
+	"github.com/innomon/whatsadk/internal/logger"
 	"github.com/innomon/whatsadk/internal/store"
 	"github.com/innomon/whatsadk/internal/waba"
 	"github.com/innomon/whatsadk/internal/whatsapp"
@@ -22,6 +23,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+
+	appLogger, err := logger.Init(cfg)
+	if err != nil {
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+	appLogger.Info("Structured logging initialized")
 
 	if !cfg.WABA.Enabled {
 		fmt.Println("WABA is disabled in config. To enable, set WABA_ENABLED=true or update config.yaml")
@@ -57,7 +64,7 @@ func main() {
 
 	// Webhook handler logic
 	onMessageParts := func(sender string, parts []agent.Part) {
-		log.Printf("Received WABA message parts from %s: %d parts", sender, len(parts))
+		appLogger.Info("Received WABA message parts", "sender", sender, "parts_count", len(parts))
 
 		ctx := context.Background()
 		uniqueID := fmt.Sprintf("waba_%d", time.Now().UnixNano())
@@ -67,17 +74,17 @@ func main() {
 			// Handle inbound media (Media ID protocol)
 			if part.InlineData != nil && strings.HasPrefix(part.InlineData.Data, "media_id:") {
 				mediaID := strings.TrimPrefix(part.InlineData.Data, "media_id:")
-				log.Printf("Downloading WABA media: %s", mediaID)
+				appLogger.Info("Downloading WABA media", "media_id", mediaID)
 
 				mediaInfo, err := wabaClient.GetMediaURL(ctx, mediaID)
 				if err != nil {
-					log.Printf("Failed to get media URL for %s: %v", mediaID, err)
+					appLogger.Error("Failed to get media URL for WABA media", "media_id", mediaID, "error", err)
 					continue
 				}
 
 				data, err := wabaClient.DownloadMedia(ctx, mediaInfo.URL)
 				if err != nil {
-					log.Printf("Failed to download media %s: %v", mediaID, err)
+					appLogger.Error("Failed to download WABA media", "media_id", mediaID, "error", err)
 					continue
 				}
 
@@ -95,7 +102,7 @@ func main() {
 					if pErr == nil {
 						processedParts = append(processedParts, *pPart)
 					} else {
-						log.Printf("Failed to process image: %v", pErr)
+						appLogger.Error("Failed to process image", "error", pErr)
 					}
 				}
 			} else {
@@ -121,7 +128,7 @@ func main() {
 		// 2. Forward to ADK
 		respParts, err := adkClient.ChatParts(ctx, sender, processedParts)
 		if err != nil {
-			log.Printf("ADK Error: %v", err)
+			appLogger.Error("ADK Error", "error", err)
 			wabaClient.SendText(ctx, sender, "Sorry, I encountered an error processing your message.")
 			return
 		}
@@ -134,7 +141,7 @@ func main() {
 				// Otherwise send as separate message
 				caption = part.Text
 				if err := wabaClient.SendText(ctx, sender, part.Text); err != nil {
-					log.Printf("WABA Send Error: %v", err)
+					appLogger.Error("WABA Send Error", "error", err)
 				}
 
 				respPath := fmt.Sprintf("waba/%s/%s/response", sender, uniqueID)
@@ -152,7 +159,7 @@ func main() {
 			if part.InlineData != nil {
 				data, err := base64.StdEncoding.DecodeString(part.InlineData.Data)
 				if err != nil {
-					log.Printf("Failed to decode outbound media: %v", err)
+					appLogger.Error("Failed to decode outbound media", "error", err)
 					continue
 				}
 
@@ -161,12 +168,12 @@ func main() {
 					fileName := fmt.Sprintf("image-%d.jpg", time.Now().Unix())
 					mediaID, err := wabaClient.UploadMedia(ctx, data, fileName, part.InlineData.MimeType)
 					if err != nil {
-						log.Printf("WABA Upload Error: %v", err)
+						appLogger.Error("WABA Upload Error", "error", err)
 						continue
 					}
 
 					if err := wabaClient.SendImage(ctx, sender, mediaID, caption); err != nil {
-						log.Printf("WABA Send Image Error: %v", err)
+						appLogger.Error("WABA Send Image Error", "error", err)
 					}
 
 					// Reset caption after use
@@ -183,7 +190,7 @@ func main() {
 					}
 					s.PutFile(ctx, respPath, respMetadata, []byte("[IMAGE]"), time.Now())
 				} else {
-					log.Printf("Outbound non-image media detected but not yet supported for WABA in this loop")
+					appLogger.Warn("Outbound non-image media detected but not yet supported for WABA in this loop")
 				}
 			}
 		}

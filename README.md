@@ -132,6 +132,15 @@ auth:
     # issuer: "whatsadk-gateway"
     # audience: "adk-agent"
     # ttl: "2m"                                     # Token lifetime (default: 2m)
+
+logging:
+  level: "INFO"            # DEBUG, INFO, WARN, ERROR
+  console_enabled: true    # Enable human-readable console logging
+  file_enabled: true       # Enable caller-locating JSONL file logging
+  dir: "logs"              # Log directory path
+  file_name: "whatsadk.log"# Filename for log files
+  max_size_mb: 10          # Max size per file in MB before rotation
+  max_backups: 5           # Number of old log files to retain
 ```
 
 ## Usage

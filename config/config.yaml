@@ -51,3 +51,13 @@ verification:
   #   phone_mismatch: "❌ Verification failed. Please make sure you're sending from the same number you registered with."
   #   blacklisted: "🚫 This number has been blocked from verification."
   #   error: "⚠️ Something went wrong. Please try again in a moment."
+
+logging:
+  level: "INFO"
+  console_enabled: true
+  file_enabled: true
+  dir: "logs"
+  file_name: "whatsadk.log"
+  max_size_mb: 10
+  max_backups: 5
+

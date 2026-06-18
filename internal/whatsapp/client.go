@@ -43,8 +43,7 @@ type Client struct {
 }
 
 func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client, verifyHandler *verification.Handler, oauthHandler *auth.OAuthHandler, gatewayStore *store.Store) (*Client, error) {
-	rawLog := waLog.Stdout("WhatsApp", cfg.WhatsApp.LogLevel, true)
-	log := NewFilteredLogger(rawLog, "")
+	log := NewFilteredLogger("whatsmeow")
 
 	dialect := "postgres"
 	if store.IsSurrealDB(cfg.WhatsApp.StoreDSN) {

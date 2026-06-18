@@ -20,6 +20,17 @@ type Config struct {
 	Verification VerificationConfig `yaml:"verification"`
 	Cron         CronConfig         `yaml:"cron"`
 	SurrealDB    SurrealDBConfig    `yaml:"surrealdb"`
+	Logging      LoggingConfig      `yaml:"logging"`
+}
+
+type LoggingConfig struct {
+	Level          string `yaml:"level"`
+	ConsoleEnabled bool   `yaml:"console_enabled"`
+	FileEnabled    bool   `yaml:"file_enabled"`
+	Dir            string `yaml:"dir"`
+	FileName       string `yaml:"file_name"`
+	MaxSizeMB      int    `yaml:"max_size_mb"`
+	MaxBackups     int    `yaml:"max_backups"`
 }
 
 type WABAConfig struct {
@@ -269,6 +280,26 @@ func (c *Config) applyDefaults() {
 	if c.Auth.OAuth.RateLimit == 0 {
 		c.Auth.OAuth.RateLimit = 5
 	}
+	if c.Logging.Level == "" {
+		c.Logging.Level = "INFO"
+		// If both are false and level was empty, default to both enabled
+		if !c.Logging.ConsoleEnabled && !c.Logging.FileEnabled {
+			c.Logging.ConsoleEnabled = true
+			c.Logging.FileEnabled = true
+		}
+	}
+	if c.Logging.Dir == "" {
+		c.Logging.Dir = "logs"
+	}
+	if c.Logging.FileName == "" {
+		c.Logging.FileName = "whatsadk.log"
+	}
+	if c.Logging.MaxSizeMB == 0 {
+		c.Logging.MaxSizeMB = 10
+	}
+	if c.Logging.MaxBackups == 0 {
+		c.Logging.MaxBackups = 5
+	}
 }
 
 func (c *Config) IsUserWhitelisted(userID string) bool {
@@ -357,5 +388,30 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if v := os.Getenv("SURREALDB_DATABASE"); v != "" {
 		c.SurrealDB.Database = v
+	}
+	if v := os.Getenv("LOG_LEVEL"); v != "" {
+		c.Logging.Level = v
+	}
+	if v := os.Getenv("LOG_DIR"); v != "" {
+		c.Logging.Dir = v
+	}
+	if v := os.Getenv("LOG_FILE_NAME"); v != "" {
+		c.Logging.FileName = v
+	}
+	if v := os.Getenv("LOG_MAX_SIZE_MB"); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			c.Logging.MaxSizeMB = i
+		}
+	}
+	if v := os.Getenv("LOG_MAX_BACKUPS"); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			c.Logging.MaxBackups = i
+		}
+	}
+	if v := os.Getenv("LOG_CONSOLE_ENABLED"); v != "" {
+		c.Logging.ConsoleEnabled = v == "true"
+	}
+	if v := os.Getenv("LOG_FILE_ENABLED"); v != "" {
+		c.Logging.FileEnabled = v == "true"
 	}
 }
