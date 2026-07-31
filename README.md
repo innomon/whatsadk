@@ -23,7 +23,7 @@ A high-performance Go gateway that connects WhatsApp to remote ADK Agent service
 
 ## Requirements
 
-- Go 1.25+
+- Go 1.26.5+
 - PostgreSQL database
 - **FFmpeg** — Required for the **Media Bridge** to process audio (Opus to WAV) and video (sampling frames). Ensure it is available in your system `PATH`.
   - **Ubuntu/Debian:** `sudo apt update && sudo apt install ffmpeg`
@@ -686,7 +686,8 @@ The utility exports and restores the following tables across both PostgreSQL and
 ## Dependencies
 
 - [whatsmeow](https://github.com/tulir/whatsmeow) - WhatsApp Web multidevice API
-- [ADK](https://github.com/google/adk-go) - Google Agent Development Kit (remote service)
+- [ADK (v2.1.0)](https://github.com/google/adk-go) - Google Agent Development Kit (`google.golang.org/adk/v2`)
+- [agentic (v2.1.0)](https://github.com/innomon/agentic) - Agentic framework library
 
 ## License
 

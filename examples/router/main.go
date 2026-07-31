@@ -21,12 +21,12 @@ import (
 	"github.com/innomon/whatsadk/internal/agent"
 	"github.com/innomon/whatsadk/internal/config"
 	"github.com/innomon/whatsadk/internal/store"
-	adkagent "google.golang.org/adk/agent"
-	"google.golang.org/adk/cmd/launcher"
-	"google.golang.org/adk/cmd/launcher/full"
-	"google.golang.org/adk/model"
-	"google.golang.org/adk/runner"
-	"google.golang.org/adk/session"
+	adkagent "google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/cmd/launcher"
+	"google.golang.org/adk/v2/cmd/launcher/full"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/runner"
+	"google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
 	"gopkg.in/yaml.v3"
 )
@@ -291,7 +291,7 @@ func routerRun(invCtx adkagent.InvocationContext) iter.Seq2[*session.Event, erro
 
 		// 6. & 7. Route to target app
 		if targetApp == "ignore" {
-			event := session.NewEvent(invCtx.InvocationID())
+			event := session.NewEvent(invCtx, invCtx.InvocationID())
 			event.LLMResponse = model.LLMResponse{
 				Content: &genai.Content{
 					Role: "model",
@@ -349,7 +349,7 @@ func routerRun(invCtx adkagent.InvocationContext) iter.Seq2[*session.Event, erro
 			return
 		}
 
-		event := session.NewEvent(invCtx.InvocationID())
+		event := session.NewEvent(invCtx, invCtx.InvocationID())
 		event.LLMResponse = model.LLMResponse{
 			Content: &genai.Content{
 				Role:  "model",
@@ -406,7 +406,7 @@ func getUserInput(invCtx adkagent.InvocationContext) string {
 }
 
 func makeResponse(invCtx adkagent.InvocationContext, text string) *session.Event {
-	event := session.NewEvent(invCtx.InvocationID())
+	event := session.NewEvent(invCtx, invCtx.InvocationID())
 	event.LLMResponse = model.LLMResponse{
 		Content: &genai.Content{
 			Role: "model",

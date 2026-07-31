@@ -9,11 +9,11 @@ import (
 	"os"
 	"strings"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/cmd/launcher"
-	"google.golang.org/adk/cmd/launcher/full"
-	"google.golang.org/adk/model"
-	"google.golang.org/adk/session"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/cmd/launcher"
+	"google.golang.org/adk/v2/cmd/launcher/full"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
 )
 
@@ -78,7 +78,7 @@ func ignoreRun(invCtx agent.InvocationContext) iter.Seq2[*session.Event, error] 
 		if !isWhitelisted(userID) {
 			fmt.Printf("🔇 Ignoring user %s (not in whitelist)\n", userID)
 			// Create a new event for the silent ignore response
-			event := session.NewEvent(invCtx.InvocationID())
+			event := session.NewEvent(invCtx, invCtx.InvocationID())
 			event.LLMResponse = model.LLMResponse{
 				Content: &genai.Content{
 					Role: "model",
@@ -126,7 +126,7 @@ func ignoreRun(invCtx agent.InvocationContext) iter.Seq2[*session.Event, error] 
 		}
 
 		// Create a new event for the response
-		event := session.NewEvent(invCtx.InvocationID())
+		event := session.NewEvent(invCtx, invCtx.InvocationID())
 		event.LLMResponse = model.LLMResponse{
 			Content: &genai.Content{
 				Role: "model",
