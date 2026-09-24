@@ -45,6 +45,17 @@ type sqlStore struct {
 	db *sql.DB
 }
 
+func IsSQLiteP2P(dsn string) bool {
+	return strings.HasPrefix(dsn, "sqlite-p2p://") ||
+		strings.HasPrefix(dsn, "sqlite://") ||
+		strings.HasPrefix(dsn, "p2p://") ||
+		strings.HasPrefix(dsn, "pear://")
+}
+
+func openSQLiteP2P(dsn string) (storeBackend, error) {
+	return openSQLiteP2PBackend(dsn)
+}
+
 func IsSurrealDB(dsn string) bool {
 	return strings.HasPrefix(dsn, "surrealdb://") ||
 		strings.HasPrefix(dsn, "ws://") ||
@@ -54,6 +65,14 @@ func IsSurrealDB(dsn string) bool {
 }
 
 func Open(dsn string) (*Store, error) {
+	if IsSQLiteP2P(dsn) {
+		backend, err := openSQLiteP2P(dsn)
+		if err != nil {
+			return nil, err
+		}
+		return &Store{backend: backend}, nil
+	}
+
 	if IsSurrealDB(dsn) {
 		backend, err := openSurrealDB(dsn)
 		if err != nil {
