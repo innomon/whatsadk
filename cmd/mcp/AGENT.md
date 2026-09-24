@@ -5,17 +5,23 @@ The WhatsADK MCP (Model Context Protocol) server provides a standardized interfa
 ## 🛠 Build and Installation
 
 ### 1. Build the Binary
+
 From the project root, run:
+
 ```bash
 make build-mcp
 ```
+
 This will create the `whatsadk-mcp` binary in the `bin/` directory.
 
 ### 2. Configuration
+
 The MCP server requires access to the same database as the main Gateway. Ensure your `config.yaml` is correctly configured with the PostgreSQL DSN or the SurrealDB configuration block.
 
 ## 🚀 How to Run (Manual)
+
 The MCP server uses `stdio` transport. You can test it manually (though it's designed for machine interaction):
+
 ```bash
 ./bin/whatsadk-mcp -config ./config/config.yaml
 ```
@@ -23,7 +29,9 @@ The MCP server uses `stdio` transport. You can test it manually (though it's des
 ## 🤖 Integration with AI Agents
 
 ### Gemini CLI
+
 Add the server to your Gemini CLI configuration:
+
 ```json
 {
   "mcpServers": {
@@ -36,7 +44,9 @@ Add the server to your Gemini CLI configuration:
 ```
 
 ### Claude Desktop / Claude Code
+
 Update your `claude_desktop_config.json`:
+
 ```json
 {
   "mcpServers": {
@@ -51,7 +61,9 @@ Update your `claude_desktop_config.json`:
 ```
 
 ### pi.dev (Pi Coding Agent)
+
 Create or update `.pi/mcp.json` in your project root:
+
 ```json
 {
   "mcpServers": {
@@ -67,7 +79,9 @@ Create or update `.pi/mcp.json` in your project root:
 ```
 
 ### OpenCode / Block Goose
+
 Add the following to your MCP configuration file (usually `mcp.json` or `config.json` in the tool's config directory):
+
 ```json
 {
   "mcpServers": {
@@ -82,17 +96,20 @@ Add the following to your MCP configuration file (usually `mcp.json` or `config.
 ## 🛠 Available Tools
 
 ### Blacklist Management
+
 - `blacklist_add`: Block a phone number/JID (Local Shadow Ban + Remote WhatsApp Block).
 - `blacklist_remove`: Unblock a phone number/JID.
 - `blacklist_get_remote`: Fetch the official blocklist from WhatsApp servers.
 
 ### Contacts & Messaging
+
 - `query_contacts`: Search for WhatsApp contacts by name or JID.
 - `get_recent_messages`: Retrieve recent message logs globally or for a specific user.
 - `send_message`: Send multi-modal messages (text and/or media). Supports `context_type` (enum: `"recommendation"`, `"notification"`, `"advertisement"`, `"system"`, `"response"`) and `msg_ref` (original request message ID being replied to) to link the reply.
 - `get_database_type`: Discover the active database backend type (`postgres` or `surrealdb`).
 
 ### Virtual File System (filesys)
+
 - `filesys_sql_select`: Execute custom SELECT queries for advanced filtering.
 - `filesys_put`: Create or update entries in the virtual file system.
 - `filesys_get`: Retrieve specific entries by path.
@@ -108,6 +125,7 @@ Use the `get_database_type` tool first to discover the active database type (`po
 ### 🗄 filesys Table/Collection Schema
 
 #### PostgreSQL
+
 ```sql
 CREATE TABLE filesys (
     path     TEXT PRIMARY KEY,            -- Format: whatsmeow/<phone>/<uniqueID>/<request|response>
@@ -120,6 +138,7 @@ CREATE INDEX idx_filesys_metadata ON filesys USING GIN (metadata);
 ```
 
 #### SurrealDB
+
 ```surrealql
 -- The table is dynamically/schemalessly defined.
 -- Record ID is derived from the MD5 hash of the path: filesys:<md5(path)>
@@ -134,14 +153,18 @@ DEFINE TABLE filesys SCHEMALESS;
 Here are dialect-specific SQL examples for common operations on the `filesys` schema:
 
 ### 1. Retrieve the Latest 5 Logs
+
 * **Postgres**:
+
   ```sql
   SELECT path, metadata->>'mime_type' AS mime_type, tmstamp 
   FROM filesys 
   ORDER BY tmstamp DESC 
   LIMIT 5
   ```
+
 * **SurrealDB**:
+
   ```surrealql
   SELECT path, metadata, tmstamp 
   FROM filesys 
@@ -150,14 +173,18 @@ Here are dialect-specific SQL examples for common operations on the `filesys` sc
   ```
 
 ### 2. Search Messages by Path Prefix (e.g. a particular phone number)
+
 * **Postgres**:
+
   ```sql
   SELECT path, tmstamp 
   FROM filesys 
   WHERE path LIKE 'whatsmeow/1234567890/%' 
   ORDER BY tmstamp DESC
   ```
+
 * **SurrealDB**:
+
   ```surrealql
   SELECT path, tmstamp 
   FROM filesys 
@@ -166,15 +193,19 @@ Here are dialect-specific SQL examples for common operations on the `filesys` sc
   ```
 
 ### 3. Filter by Metadata Fields (JSON / Document search)
+
 In PostgreSQL, `metadata` is stored as a native `JSONB` column. In SurrealDB, it is stored as a JSON-encoded string.
-* **Postgres**:
+- **Postgres**:
+
   ```sql
   SELECT path, tmstamp 
   FROM filesys 
   WHERE metadata->>'mime_type' = 'text/plain' 
   ORDER BY tmstamp DESC
   ```
+
 * **SurrealDB**:
+
   ```surrealql
   SELECT path, tmstamp 
   FROM filesys 
@@ -183,26 +214,31 @@ In PostgreSQL, `metadata` is stored as a native `JSONB` column. In SurrealDB, it
   ```
 
 ### 4. Search Content by Substring (Text Message)
+
 * **Postgres** (Note: `content` is a `BYTEA` column in Postgres, so it must be cast/encoded to match text):
+
   ```sql
   SELECT path, encode(content, 'escape') AS message 
   FROM filesys 
   WHERE encode(content, 'escape') LIKE '%hello%'
   ```
+
 * **SurrealDB**:
+
   ```surrealql
   SELECT path, content 
   FROM filesys 
   WHERE content CONTAINS 'hello'
   ```
 
-
 ## 📂 Virtual File System (filesys) Put/Get Examples
 
 Below are JSON examples showing how to use the virtual file system tools (`filesys_put` and `filesys_get`) to write and read files with associated metadata.
 
 ### 1. `filesys_put` Example
+
 **Arguments:**
+
 ```json
 {
   "path": "whatsmeow/1234567890/msg_09876/request",
@@ -215,6 +251,7 @@ Below are JSON examples showing how to use the virtual file system tools (`files
 ```
 
 **Response (Success):**
+
 ```json
 {
   "content": [
@@ -227,7 +264,9 @@ Below are JSON examples showing how to use the virtual file system tools (`files
 ```
 
 ### 2. `filesys_get` Example
+
 **Arguments:**
+
 ```json
 {
   "path": "whatsmeow/1234567890/msg_09876/request"
@@ -236,6 +275,7 @@ Below are JSON examples showing how to use the virtual file system tools (`files
 
 **Response (Success):**
 The metadata is returned structured under a standard `sql.NullString` JSON block:
+
 ```json
 {
   "content": [
@@ -246,10 +286,11 @@ The metadata is returned structured under a standard `sql.NullString` JSON block
   ]
 }
 ```
+
 *Note: The `content` field contains the Base64-encoded representation of the content bytes.*
 
-
 ### Router & App Management
+
 - `router_get_apps`: Retrieve provisioned apps for a user.
 - `router_set_apps`: Provision apps for a user.
 - `router_delete_apps`: Remove provisioned apps.
@@ -263,10 +304,12 @@ You can turn an AI agent into the "brain" of your WhatsApp account.
 
 1. **Disable Internal ADK Logic**:
    In `config/config.yaml`:
+
    ```yaml
    adk:
      enabled: false
    ```
+
 2. **Start the Gateway**: `./bin/gateway`
 3. **Prompt your Agent**:
    Give your agent (e.g., Gemini CLI or Claude Code) this system instruction:
