@@ -21,6 +21,7 @@ require (
 	google.golang.org/genai v1.63.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
+	sqlite-p2p v0.0.0
 )
 
 require (
@@ -143,3 +144,7 @@ require (
 	rsc.io/ordered v1.1.1 // indirect
 	rsc.io/qr v0.2.0 // indirect
 )
+
+replace sqlite-p2p => ../../../owly-sewa/sqlite-p2p
+replace go-pear => ../../../owly-sewa/go-pear
+
