@@ -5,18 +5,18 @@ A high-performance Go gateway that connects WhatsApp to remote ADK Agent service
 ## Features
 
 - **Dual Mode Connectivity:**
-    - **QR Code Mode:** Link any WhatsApp account by scanning a QR code (built on `whatsmeow`).
-    - **WABA Mode:** Connect via the official WhatsApp Business Cloud API with webhook support.
+  - **QR Code Mode:** Link any WhatsApp account by scanning a QR code (built on `whatsmeow`).
+  - **WABA Mode:** Connect via the official WhatsApp Business Cloud API with webhook support.
 - **Persistent Storage:** WhatsApp sessions, contacts, and message logs are stored in PostgreSQL.
 - **Two-Way Media Bridge:** Automatically intercept, transform, and forward WhatsApp media (images, audio, video) to the ADK agent.
-    - **Normalization:** Images are normalized to **896x896 JPEG**; audio is converted to **16kHz Mono WAV**.
-    - **Location:** Native location shares are standardized as **Text Parts** (`Location: [lat, lng]`) for the agent.
-    - **Outbound:** Supports sending media back from the agent to the WhatsApp user.
+  - **Normalization:** Images are normalized to **896x896 JPEG**; audio is converted to **16kHz Mono WAV**.
+  - **Location:** Native location shares are standardized as **Text Parts** (`Location: [lat, lng]`) for the agent.
+  - **Outbound:** Supports sending media back from the agent to the WhatsApp user.
 - **Agent Interaction:** Support for both `/run` (single response) and `/run_sse` (streaming) endpoints.
 - **Security:**
-    - JWT authentication with RS256 (asymmetric) signing.
-    - **WhatsApp OAuth:** Ed25519/EdDSA-based login flow for SPAs.
-    - **Reverse OTP Verification:** Verify phone numbers via incoming WhatsApp tokens and signed callbacks.
+  - JWT authentication with RS256 (asymmetric) signing.
+  - **WhatsApp OAuth:** Ed25519/EdDSA-based login flow for SPAs.
+  - **Reverse OTP Verification:** Verify phone numbers via incoming WhatsApp tokens and signed callbacks.
 - **Cron Heartbeat Timers:** Periodically execute A2A (Agent-to-Agent) tasks with summary-based memory.
 - **MCP Server:** Model Context Protocol support for agentic control of WhatsApp (blacklist, contacts, messaging).
 - **Extensive Tooling:** Includes simulators for both WhatsApp and ADK interfaces for rapid testing.
@@ -36,12 +36,14 @@ A high-performance Go gateway that connects WhatsApp to remote ADK Agent service
 The project provides two separate binaries depending on how you want to connect to WhatsApp:
 
 ### 1. QR Code Mode (Standard)
+
 - **Binary:** `bin/gateway`
 - **Mechanism:** Uses a virtual "Linked Device" via the `whatsmeow` library.
 - **Setup:** Scan a QR code in the terminal with your phone.
 - **Best For:** Individual users, small businesses, and testing with existing personal/business accounts.
 
 ### 2. WABA Mode (Official API)
+
 - **Binary:** `bin/waba-gateway`
 - **Mechanism:** Uses the official Meta WhatsApp Business Cloud API.
 - **Setup:** Requires a Meta Developer App, Phone Number ID, and a publicly accessible Webhook URL.
@@ -69,7 +71,7 @@ make build
 ### Environment Variables
 
 | Variable | Required | Description |
-|----------|----------|-------------|
+| ---------- | ---------- | ------------- |
 | `ADK_ENDPOINT` | No | ADK service URL (default: `http://localhost:8000/api`) |
 | `ADK_APP_NAME` | No | Agent application name |
 | `ADK_API_KEY` | No | API key for authenticated endpoints |
@@ -97,6 +99,7 @@ make build
 ### Config File
 
 The gateway searches for `config.yaml` in this order:
+
 1. Path passed via `-config` flag
 2. Path in `CONFIG_FILE` env var
 3. `./config.yaml`
@@ -104,6 +107,7 @@ The gateway searches for `config.yaml` in this order:
 5. Executable directory
 
 Example `config/config.yaml`:
+
 ```yaml
 whatsapp:
   store_dsn: "postgres://localhost:5432/whatsadk?sslmode=disable"  # PostgreSQL, or set to "surrealdb" to use SurrealDB config below
@@ -159,6 +163,7 @@ adk api_server
 ### 2. Run the Gateway
 
 #### Option A: QR Code Mode (Standard)
+
 ```bash
 # With default config (localhost:8000)
 ./bin/gateway
@@ -168,6 +173,7 @@ adk api_server
 ```
 
 #### Option B: WABA Mode (Official API)
+
 ```bash
 # Ensure WABA_ENABLED=true in your environment or config
 ./bin/waba-gateway
@@ -217,6 +223,7 @@ To run an example, follow the instructions in its respective `README.md`.
 The ADK agent can instruct the gateway to **not** send a reply to the user while still recording the reason for ignoring the message. This is useful for off-topic queries or when the agent determines no response is necessary.
 
 To trigger a silent ignore, the ADK response should include an `inlineData` part:
+
 - **mimeType**: `application/x-adk-silent-ignore`
 - **data**: Base64-encoded reason string (e.g., "User is off-topic")
 
@@ -225,7 +232,7 @@ The gateway will log the reason and record it in the `filesys` table as a "respo
 ### API Endpoints Used
 
 | Endpoint | Method | Description |
-|----------|--------|-------------|
+| ---------- | -------- | ------------- |
 | `/apps/{app}/users/{user}/sessions/{session}` | POST | Create or reuse session |
 | `/run` | POST | Send message, get single response |
 | `/run_sse` | POST | Send message, stream response via SSE |
@@ -242,12 +249,14 @@ When enabled, each request includes a short-lived Bearer token with custom claim
 ### Setup
 
 1. Generate an RSA key pair:
+
    ```bash
    openssl genrsa -out secrets/jwt_private.pem 2048
    openssl rsa -in secrets/jwt_private.pem -pubout -o secrets/jwt_public.pem
    ```
 
 2. Configure the private key path in `config.yaml`:
+
    ```yaml
    auth:
      jwt:
@@ -268,6 +277,7 @@ For the ADK Go server-side verification implementation, see [docs/adk-jwt-auth-s
 The gateway can act as an Identity Provider, allowing SPA users to authenticate via WhatsApp. This flow uses **Ed25519/EdDSA** for signing because it produces significantly more compact tokens (~350 characters) than RSA. These compact tokens are required to fit within WhatsApp messages and mobile deep-link URLs without being truncated.
 
 **How it works:**
+
 1. SPA generates an Ed25519 key pair and a nonce, then opens a `wa.me` deep link: `AUTH <pubkey> <nonce>`
 2. User sends the message to the gateway's WhatsApp number
 3. Gateway signs a JWT with the user's phone number and sends back a login link
@@ -276,11 +286,13 @@ The gateway can act as an Identity Provider, allowing SPA users to authenticate 
 ### Setup
 
 1. Generate an Ed25519 key pair:
+
    ```bash
    go run ./cmd/keygen -out secrets/oauth_ed25519.pem
    ```
 
 2. Configure in `config.yaml`:
+
    ```yaml
    auth:
      oauth:
@@ -316,6 +328,7 @@ The gateway supports a two-factor Reverse OTP flow where third-party apps can ve
 **Two-factor assurance:** Factor 1 — WhatsApp message (proves phone ownership); Factor 2 — OTP entry in browser (proves session continuity).
 
 **Security design:**
+
 - **No `callback_url` in JWT** — callback destination is derived from static config to prevent SSRF
 - **`challenge_id` bound in callback JWT** — prevents confused deputy / cross-challenge replay attacks
 - **Redirects disallowed** on callback HTTP client
@@ -386,6 +399,7 @@ WhatsADK implements two distinct memory patterns depending on the interaction ty
    - For automated jobs, the gateway uses a **Summary-Injection** pattern.
    - The final response from a cron job is saved as a "Summary" in the `filesys` table at `cron/<job_name>/summary`.
    - Before the next run, the gateway retrieves this summary and prepends it to the new message:
+
      ```text
      Previous Run Summary:
      [Content from last run]
@@ -393,6 +407,7 @@ WhatsADK implements two distinct memory patterns depending on the interaction ty
      Task:
      [New job message]
      ```
+
    - This provides "compressed" continuity across periodic runs without requiring long-lived backend sessions.
 
 ### Contact & Message Storage
@@ -410,6 +425,7 @@ The `whatsmeow` library automatically manages session and contact data.
 The `filesys` table/collection stores both incoming messages (requests) and outgoing responses.
 
 #### PostgreSQL
+
 ```sql
 CREATE TABLE filesys (
     path    TEXT PRIMARY KEY,           -- Format: whatsmeow/<phone>/<uniqueID>/<request|response>
@@ -425,6 +441,7 @@ CREATE INDEX idx_filesys_metadata ON filesys USING GIN (metadata);
 > Outgoing response records support metadata linking context to the original message. The metadata JSON column can contain `context_type` (enum: `"recommendation"`, `"notification"`, `"advertisement"`, `"system"`, `"response"`) and `msg_ref` (the original request's message ID). If `msg_ref` is provided, the record path uses the referenced message ID instead of a generated unique ID.
 
 #### SurrealDB
+
 ```surrealql
 -- Table is dynamically/schemalessly defined. 
 -- Record ID is derived from the MD5 hash of the path: filesys:<md5(path)>
@@ -441,6 +458,7 @@ DEFINE TABLE filesys SCHEMALESS;
 The `whatsmeow_contacts` table/collection is automatically populated and updated as `whatsmeow` receives sync events from WhatsApp.
 
 #### PostgreSQL
+
 ```sql
 CREATE TABLE whatsmeow_contacts (
     our_jid       TEXT, -- The JID of the local user session
@@ -454,6 +472,7 @@ CREATE TABLE whatsmeow_contacts (
 ```
 
 #### SurrealDB
+
 ```surrealql
 -- Record ID is derived from the MD5 hash of our_jid + "_" + their_jid: whatsmeow_contacts:<md5(our_jid + "_" + their_jid)>
 DEFINE TABLE whatsmeow_contacts SCHEMALESS;
@@ -471,6 +490,7 @@ DEFINE TABLE whatsmeow_contacts SCHEMALESS;
 Users added to the blacklist are blocked from all interactions. Manage entries directly:
 
 #### PostgreSQL
+
 ```bash
 # Add a blacklisted number or LID
 psql "$VERIFICATION_DATABASE_URL" -c "INSERT INTO blacklisted_numbers (phone, reason) VALUES ('13061129773287', 'spam') ON CONFLICT DO NOTHING;"
@@ -483,6 +503,7 @@ psql "$VERIFICATION_DATABASE_URL" -c "SELECT * FROM blacklisted_numbers;"
 ```
 
 #### SurrealDB
+
 ```bash
 # Add a blacklisted number or LID
 curl -X POST -u "root:rootpassword" -H "NS: whatsadk" -H "DB: whatsadk" -d "UPSERT blacklisted_numbers:13061129773287 SET phone = '13061129773287', reason = 'spam', created_at = time::now();" http://localhost:8000/sql
@@ -499,11 +520,13 @@ curl -X POST -u "root:rootpassword" -H "NS: whatsadk" -H "DB: whatsadk" -d "SELE
 If the database is running in a Docker container, you can export the contact list to a text file:
 
 #### PostgreSQL
+
 ```bash
 docker exec -i whatsadk-db psql -U postgres -d <database_name> -c "SELECT * FROM whatsmeow_contacts;" > contacts.txt
 ```
 
 #### SurrealDB
+
 ```bash
 docker exec -i whatsadk-surreal surreal sql --endpoint http://localhost:8000 --ns whatsadk --db whatsadk --user root --pass rootpassword "SELECT * FROM whatsmeow_contacts;" > contacts.txt
 ```
@@ -512,7 +535,8 @@ docker exec -i whatsadk-surreal surreal sql --endpoint http://localhost:8000 --n
 
 WhatsADK includes an MCP server that allows AI agents (like Claude Code, Cursor, and OpenCode) to interact with your WhatsApp contacts and blacklist directly. See [cmd/mcp/AGENT.md](cmd/mcp/AGENT.md) for detailed configuration and installation guides for different agents.
 
-### Tools Available:
+### Tools Available
+
 - `blacklist_add`: Block a phone number/JID (Local Shadow Ban + Remote WhatsApp Block).
 - `blacklist_remove`: Unblock a phone number/JID (Local Shadow Ban + Remote WhatsApp Unblock).
 - `blacklist_get_remote`: Fetch the official blocklist from WhatsApp servers.
@@ -526,7 +550,7 @@ WhatsADK includes an MCP server that allows AI agents (like Claude Code, Cursor,
 - `filesys_delete`: Remove entries from the file system.
 - `filesys_list`: List entries with prefix filtering.
 
-### Configuration for Claude Code / Claude Desktop:
+### Configuration for Claude Code / Claude Desktop
 
 Add the following to your `claude_desktop_config.json` or equivalent:
 
@@ -543,7 +567,7 @@ Add the following to your `claude_desktop_config.json` or equivalent:
 }
 ```
 
-### Configuration for pi.dev (Pi Coding Agent):
+### Configuration for pi.dev (Pi Coding Agent)
 
 Create or update `.pi/mcp.json` in your project root:
 
@@ -561,7 +585,7 @@ Create or update `.pi/mcp.json` in your project root:
 }
 ```
 
-### Configuration for openCode:
+### Configuration for openCode
 
 Add to your `~/.config/open-code/mcp.json`:
 
@@ -583,10 +607,12 @@ Add to your `~/.config/open-code/mcp.json`:
 You can allow external agents (Claude Code, pi.dev, OpenCode) to drive WhatsApp conversations autonomously by disabling the default ADK response.
 
 1. **Disable ADK** in `config/config.yaml`:
+
    ```yaml
    adk:
      enabled: false
    ```
+
 2. **Start the Gateway**: `./bin/gateway`
 3. **Prompt your Agent**:
    Give your agent (e.g., Claude Code) the following instruction:
@@ -619,7 +645,7 @@ Simulates the **Gateway ➔ ADK** flow. It acts as the ADK server, allowing you 
 #### TUI Commands (both simulators)
 
 | Command | Description |
-|---------|-------------|
+| --------- | ------------- |
 | `/help` | List all available commands |
 | `/attach <path> [caption/mime]` | Attach a file to the next message |
 | `/clear` | Clear the chat history |
@@ -639,11 +665,12 @@ The exported JSON can then be loaded into the simulator using `/replay` to repro
 
 ### Database Export/Import Utility (`dbutil`)
 
-The `dbutil` command-line utility provides database-agnostic import/export capabilities using the standard **JSON Lines (JSONL)** format. This format is fully streaming-friendly (ideal for large message databases) and translates binary assets (like files in the filesys database) into portable Base64 encoded JSON objects. 
+The `dbutil` command-line utility provides database-agnostic import/export capabilities using the standard **JSON Lines (JSONL)** format. This format is fully streaming-friendly (ideal for large message databases) and translates binary assets (like files in the filesys database) into portable Base64 encoded JSON objects.
 
 This tool allows seamless database migrations (e.g., migrating from PostgreSQL to SurrealDB or vice-versa) and general backups/restores.
 
 #### Build
+
 ```bash
 make build
 # Or directly compile:
@@ -670,7 +697,9 @@ cat backup.jsonl | ./bin/dbutil import -in -
 ```
 
 #### Supported Tables/Entities
+
 The utility exports and restores the following tables across both PostgreSQL and SurrealDB backends:
+
 1. `blacklisted_numbers` (Blocked phones/contacts)
 2. `whatsmeow_contacts` (Synched WhatsApp contacts)
 3. `whatsmeow_commands` (Outbound agent command queue)
@@ -681,7 +710,6 @@ The utility exports and restores the following tables across both PostgreSQL and
 - For a detailed architecture overview, see [ARCHITECTURE.md](ARCHITECTURE.md).
 - For a deep dive into the end-to-end user message flow and ADK routing, see [docs/whatsapp_user_interaction.md](docs/whatsapp_user_interaction.md).
 - For a deep dive into the dynamic application selection and provisioning flows, see [docs/routing_and_app_provisioning.md](docs/routing_and_app_provisioning.md).
-
 
 ## Dependencies
 

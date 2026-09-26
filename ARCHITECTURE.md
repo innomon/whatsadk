@@ -44,6 +44,7 @@ graph TD
 ```
 
 The gateway provides two entry points for WhatsApp connectivity:
+
 1. **Multi-Device Gateway (`cmd/gateway`)**: Uses the unofficial `whatsmeow` library. It connects via WebSocket and supports QR-code based authentication.
 2. **WABA Gateway (`cmd/waba-gateway`)**: Uses the official Meta WhatsApp Business Cloud API. It receives messages via HTTP webhooks and sends replies via the Meta Graph API.
 
@@ -138,13 +139,13 @@ Wraps the [whatsmeow](https://github.com/tulir/whatsmeow) library and provides m
 - **QR code authentication** — displays QR in terminal on first run
 - **Persistent sessions** — stored in PostgreSQL (via `sqlstore`) or SurrealDB (via `surrealStore`)
 - **Two-Way Media Bridge (`media.go`)** — Normalizes media and metadata between WhatsApp and ADK:
-    - **Normalization Layer:** Transforms platform-specific formats into a unified ADK standard (`agent.Part`).
-    - **Inbound (WA ➔ ADK):** 
-        - **Images:** Automatically resized and normalized to **896x896 JPEG**. 
-        - **Audio:** Converted to **16kHz Mono WAV**.
-        - **Video:** Sampled at **1 FPS** into JPEG frames.
-        - **Location:** Standardized as a **Text Part** (e.g., `Location: [lat, lng]`) to ensure compatibility with LLM text reasoning.
-    - **Outbound (ADK ➔ WA):** Uploads media parts from ADK to WhatsApp servers and sends them as native WhatsApp messages (Image, Audio, Video, Document). Text parts are sent as standard conversation messages.
+  - **Normalization Layer:** Transforms platform-specific formats into a unified ADK standard (`agent.Part`).
+  - **Inbound (WA ➔ ADK):**
+    - **Images:** Automatically resized and normalized to **896x896 JPEG**.
+    - **Audio:** Converted to **16kHz Mono WAV**.
+    - **Video:** Sampled at **1 FPS** into JPEG frames.
+    - **Location:** Standardized as a **Text Part** (e.g., `Location: [lat, lng]`) to ensure compatibility with LLM text reasoning.
+  - **Outbound (ADK ➔ WA):** Uploads media parts from ADK to WhatsApp servers and sends them as native WhatsApp messages (Image, Audio, Video, Document). Text parts are sent as standard conversation messages.
 - **Message event handling** — routes incoming messages through a pipeline:
   1. Ignores messages from self and group chats
   2. Extracts text from conversation or extended text messages
@@ -163,8 +164,8 @@ Implements the integration with Meta's WhatsApp Business Cloud API:
 - **Webhook Handling (`webhook.go`)** — Handles verification and decryption of incoming messages from Meta.
 - **Graph API Client (`client.go`)** — Manages sending messages and uploading media via the Meta Graph API.
 - **Media Support:**
-    - **Inbound:** Resolves `media_id` from incoming messages, downloads binary data, and prepares it for ADK normalization.
-    - **Outbound:** Uploads media to Meta's servers to obtain a `media_id` before sending the message. Currently focuses on **Image** support.
+  - **Inbound:** Resolves `media_id` from incoming messages, downloads binary data, and prepares it for ADK normalization.
+  - **Outbound:** Uploads media to Meta's servers to obtain a `media_id` before sending the message. Currently focuses on **Image** support.
 - **Normalization:** Aligns WABA-specific message structures with the unified `agent.Part` standard used throughout the gateway.
 
 ### `internal/agent` — ADK Client
@@ -234,9 +235,11 @@ Handles the reverse OTP verification flow:
 The project includes two TUI-based simulators for end-to-end testing without physical devices:
 
 #### WhatsApp Simulator (`internal/simulator`)
+
 Simulates the **WhatsApp ➔ Gateway** flow. It sends text and media to the gateway as if they came from a real WhatsApp user. It also saves media received from the agent to `media_received/`.
 
 #### ADK Reverse Simulator (`internal/adksim`)
+
 Simulates the **Gateway ➔ ADK** flow. It acts as the ADK server, listening for `/run` and `/run_sse` requests. A human operator uses the TUI to provide the agent's response (text and media), allowing manual testing of the gateway's outbound delivery logic. Incoming media from WhatsApp is saved to `adk_media_received/`.
 
 ## Data Flow
@@ -321,7 +324,7 @@ SPA (Browser)                  WhatsApp User             Gateway                
 ## Key Dependencies
 
 | Dependency | Purpose |
-|---|---|
+| --- | --- |
 | [whatsmeow](https://github.com/tulir/whatsmeow) | WhatsApp Web multi-device API (WebSocket) |
 | [lib/pq](https://github.com/lib/pq) | PostgreSQL driver for WhatsApp session persistence |
 | [surrealdb.go](https://github.com/surrealdb/surrealdb.go) | Go client for SurrealDB backend persistence |
@@ -333,12 +336,14 @@ SPA (Browser)                  WhatsApp User             Gateway                
 ## Security Model
 
 ### Algorithm Selection Rationale
+
 The project uses two distinct cryptographic standards to balance industry compatibility with mobile performance:
 
 - **RS256 (RSA-2048)** is used for **System-to-System Auth**. It is the standard for service-to-service communication, ensuring the Gateway can authenticate with ADK servers and 3rd-party callbacks using widely supported libraries.
 - **EdDSA (Ed25519)** is used for **User-to-System OAuth**. It provides significantly smaller keys (32B) and signatures, resulting in compact JWTs (~350 chars) that fit easily within WhatsApp deep-links and mobile intent handlers, where RSA tokens (~800+ chars) would be unwieldy.
 
 ### Security Features
+
 - **JWT Auth (RS256)** — asymmetric signing ensures the ADK service can verify requests without sharing the private key. Tokens are short-lived (default 2 minutes).
 - **OAuth (EdDSA)** — Ed25519-signed JWTs for WhatsApp deep-link delivery. The JWT binds the user's phone number to the SPA's ephemeral public key. Rate-limited to 5 AUTH requests per phone per hour.
 - **TOTP Binding** — The Ed25519 public key is bound to the TOTP generation process, ensuring that codes are valid only when presented alongside the specific device key used during OAuth.
@@ -352,13 +357,17 @@ The project uses two distinct cryptographic standards to balance industry compat
 WhatsADK employs two distinct memory strategies depending on the source of the interaction:
 
 ### 1. User Session Memory (Backend-Managed)
+
 For standard WhatsApp users, the gateway acts as a stateless proxy for conversation history:
+
 - **Session ID:** The user's phone number is used as both the `UserID` and `SessionID` in ADK requests.
 - **State Responsibility:** The remote ADK Agent service is responsible for maintaining the dialogue state and history for that session.
 - **Local Logs:** While the gateway logs all requests/responses in the `filesys` table for auditability and MCP access, it does **not** re-inject these logs into the agent's prompt.
 
 ### 2. Cron Heartbeat Memory (Gateway-Managed)
+
 For automated heartbeat jobs, the gateway manages state transitions locally to ensure continuity across periodic runs:
+
 - **Summary Storage:** The output of each job is saved as a "Summary" in the `filesys` table at `cron/<job_name>/summary`.
 - **Context Injection:** Before each run, the `CronManager` retrieves the previous summary and prepends it to the job's `message` as a "Previous Run Summary" block.
 - **A2A Continuity:** This pattern allows the agent to maintain context about its own past actions (e.g., "In the last check, I noticed X, so now I will check Y") without needing the ADK backend to maintain a persistent, long-lived session state for the heartbeat user.
