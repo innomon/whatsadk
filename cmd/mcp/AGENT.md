@@ -16,7 +16,10 @@ This will create the `whatsadk-mcp` binary in the `bin/` directory.
 
 ### 2. Configuration
 
-The MCP server requires access to the same database as the main Gateway. Ensure your `config.yaml` is correctly configured with the PostgreSQL DSN or the SurrealDB configuration block.
+The MCP server requires access to the same database as the main Gateway. Ensure your `config.yaml` is correctly configured with your storage backend:
+- **PostgreSQL**: `whatsapp.store_dsn` or `verification.database_url` (e.g. `postgres://localhost:5432/whatsadk?sslmode=disable`)
+- **SurrealDB**: `surrealdb` configuration block (or `surrealdb://` DSN)
+- **SQLite-P2P**: `p2p` configuration block or `sqlite-p2p://` / `sqlite://` / `p2p://` / `pear://` DSN with optional replication gating
 
 ## 🚀 How to Run (Manual)
 
@@ -106,7 +109,7 @@ Add the following to your MCP configuration file (usually `mcp.json` or `config.
 - `query_contacts`: Search for WhatsApp contacts by name or JID.
 - `get_recent_messages`: Retrieve recent message logs globally or for a specific user.
 - `send_message`: Send multi-modal messages (text and/or media). Supports `context_type` (enum: `"recommendation"`, `"notification"`, `"advertisement"`, `"system"`, `"response"`) and `msg_ref` (original request message ID being replied to) to link the reply.
-- `get_database_type`: Discover the active database backend type (`postgres` or `surrealdb`).
+- `get_database_type`: Discover the active database backend type (`postgres`, `surrealdb`, or `sqlite-p2p`).
 
 ### Virtual File System (filesys)
 
@@ -120,9 +123,9 @@ Add the following to your MCP configuration file (usually `mcp.json` or `config.
 
 Since the `filesys_sql_select` tool forwards the query directly to the database backend without translation, you must construct the query depending on the database engine.
 
-Use the `get_database_type` tool first to discover the active database type (`postgres` or `surrealdb`).
+Use the `get_database_type` tool first to discover the active database type (`postgres`, `surrealdb`, or `sqlite-p2p`).
 
-### 🗄 filesys Table/Collection Schema
+### 🗄 filesys Table/Collection/View Schema
 
 #### PostgreSQL
 
@@ -150,6 +153,24 @@ DEFINE TABLE filesys SCHEMALESS;
 --   tmstamp: datetime                    -- Log creation timestamp
 ```
 
+#### SQLite-P2P
+
+In SQLite-P2P, `filesys` is a high-performance SQLite VIEW projected over the unified `crm_store` table:
+
+```sql
+CREATE VIEW filesys AS
+SELECT
+    substr(key, 18) AS path,
+    CASE 
+        WHEN json_extract(metadata, '$._is_null') = 1 THEN NULL
+        ELSE json_remove(metadata, '$._tmstamp')
+    END AS metadata,
+    data AS content,
+    json_extract(metadata, '$._tmstamp') AS tmstamp
+FROM crm_store
+WHERE key LIKE 'whatsadk:filesys:%';
+```
+
 Here are dialect-specific SQL examples for common operations on the `filesys` schema:
 
 ### 1. Retrieve the Latest 5 Logs
@@ -167,6 +188,15 @@ Here are dialect-specific SQL examples for common operations on the `filesys` sc
 
   ```surrealql
   SELECT path, metadata, tmstamp 
+  FROM filesys 
+  ORDER BY tmstamp DESC 
+  LIMIT 5
+  ```
+
+- **SQLite-P2P**:
+
+  ```sql
+  SELECT path, json_extract(metadata, '$.mime_type') AS mime_type, tmstamp 
   FROM filesys 
   ORDER BY tmstamp DESC 
   LIMIT 5
@@ -192,9 +222,18 @@ Here are dialect-specific SQL examples for common operations on the `filesys` sc
   ORDER BY tmstamp DESC
   ```
 
+- **SQLite-P2P**:
+
+  ```sql
+  SELECT path, tmstamp 
+  FROM filesys 
+  WHERE path LIKE 'whatsmeow/1234567890/%' 
+  ORDER BY tmstamp DESC
+  ```
+
 ### 3. Filter by Metadata Fields (JSON / Document search)
 
-In PostgreSQL, `metadata` is stored as a native `JSONB` column. In SurrealDB, it is stored as a JSON-encoded string.
+In PostgreSQL, `metadata` is stored as a native `JSONB` column. In SurrealDB, it is stored as a JSON string. In SQLite-P2P, SQLite JSON functions (`json_extract`) are used.
 
 - **Postgres**:
 
@@ -211,6 +250,15 @@ In PostgreSQL, `metadata` is stored as a native `JSONB` column. In SurrealDB, it
   SELECT path, tmstamp 
   FROM filesys 
   WHERE metadata CONTAINS '"mime_type":"text/plain"' 
+  ORDER BY tmstamp DESC
+  ```
+
+- **SQLite-P2P**:
+
+  ```sql
+  SELECT path, tmstamp 
+  FROM filesys 
+  WHERE json_extract(metadata, '$.mime_type') = 'text/plain' 
   ORDER BY tmstamp DESC
   ```
 
@@ -231,6 +279,25 @@ In PostgreSQL, `metadata` is stored as a native `JSONB` column. In SurrealDB, it
   FROM filesys 
   WHERE content CONTAINS 'hello'
   ```
+
+- **SQLite-P2P** (`content` is stored as `BLOB` / text bytes):
+
+  ```sql
+  SELECT path, CAST(content AS TEXT) AS message 
+  FROM filesys 
+  WHERE CAST(content AS TEXT) LIKE '%hello%'
+  ```
+
+## 🌐 SQLite-P2P Replication Gating & Decentralized Mesh
+
+When running with `sqlite-p2p` backend, the MCP server accesses an embedded, pure Go decentralized store that can replicate across nodes via Autobase and Hyperswarm.
+
+Replication access is gated using cryptographic public keys (`[32]byte` hex strings) in three modes configured under `p2p.replication` in `config.yaml`:
+- `all`: Unrestricted peer synchronization.
+- `whitelist`: Replicate only with authorized peer public keys.
+- `blacklist`: Block unauthorized peer public keys.
+
+For detailed SQLite-P2P storage architecture and configuration, see [docs/sqlite-p2p-storage.md](/docs/sqlite-p2p-storage.md).
 
 ## 📂 Virtual File System (filesys) Put/Get Examples
 

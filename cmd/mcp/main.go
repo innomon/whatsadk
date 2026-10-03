@@ -631,7 +631,7 @@ func main() {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "get_database_type",
-		Description: "Discover the database type (postgres or surrealdb) used by the active store.",
+		Description: "Discover the database type (postgres, surrealdb, or sqlite-p2p) used by the active store.",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args GetDatabaseTypeArgs) (*mcp.CallToolResult, any, error) {
 		return GetDatabaseType(ctx, s, args)
 	})

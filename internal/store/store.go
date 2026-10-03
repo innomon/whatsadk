@@ -178,6 +178,8 @@ func (s *Store) DatabaseType() string {
 		return "postgres"
 	case *surrealStore:
 		return "surrealdb"
+	case *Backend:
+		return "sqlite-p2p"
 	default:
 		return "unknown"
 	}
