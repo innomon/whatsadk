@@ -8,6 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"go-pear/pkg/policy"
+	p2pconfig "sqlite-p2p/pkg/config"
 	"sqlite-p2p/pkg/p2p"
 )
 
@@ -65,17 +67,21 @@ type Options struct {
 	Repo      *p2p.Repository
 	Tracker   *p2p.ChangesetTracker
 	Engine    *p2p.ReplicationEngine
+	P2PEngine *p2p.Engine
+	Policy    *policy.ReplicationPolicy
 }
 
 // Backend implements StoreBackend using SQLite unified crm_store and Autobase replication.
 type Backend struct {
-	db      *sql.DB
-	ownsDB  bool
-	repo    *p2p.Repository
-	tracker *p2p.ChangesetTracker
-	engine  *p2p.ReplicationEngine
-	mu      sync.RWMutex
-	cmdSeq  atomic.Int64
+	db        *sql.DB
+	ownsDB    bool
+	repo      *p2p.Repository
+	tracker   *p2p.ChangesetTracker
+	engine    *p2p.ReplicationEngine
+	p2pEngine *p2p.Engine
+	policy    *policy.ReplicationPolicy
+	mu        sync.RWMutex
+	cmdSeq    atomic.Int64
 }
 
 // Compile-time check that Backend implements storeBackend.
@@ -120,11 +126,13 @@ func NewBackend(opts Options) (*Backend, error) {
 	}
 
 	backend := &Backend{
-		db:      db,
-		ownsDB:  ownsDB,
-		repo:    repo,
-		tracker: tracker,
-		engine:  opts.Engine,
+		db:        db,
+		ownsDB:    ownsDB,
+		repo:      repo,
+		tracker:   tracker,
+		engine:    opts.Engine,
+		p2pEngine: opts.P2PEngine,
+		policy:    opts.Policy,
 	}
 
 	// Initialize command sequence from existing commands in DB
@@ -152,15 +160,90 @@ func (b *Backend) Tracker() *p2p.ChangesetTracker {
 	return b.tracker
 }
 
-// Close closes the underlying SQLite database if owned by this Backend.
+// Policy returns the active replication gating policy if configured.
+func (b *Backend) Policy() *policy.ReplicationPolicy {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	if b.policy != nil {
+		return b.policy
+	}
+	if b.p2pEngine != nil {
+		return b.p2pEngine.Policy()
+	}
+	return nil
+}
+
+// SetPolicy updates the active replication policy dynamically.
+func (b *Backend) SetPolicy(p *policy.ReplicationPolicy) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.policy = p
+	if b.p2pEngine != nil {
+		b.p2pEngine.SetPolicy(p)
+	}
+}
+
+// Engine returns the high-level P2P Engine if initialized.
+func (b *Backend) Engine() *p2p.Engine {
+	return b.p2pEngine
+}
+
+// Close closes the underlying SQLite database or P2P engine if owned by this Backend.
 func (b *Backend) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	if b.p2pEngine != nil {
+		return b.p2pEngine.Close()
+	}
 	if b.ownsDB && b.db != nil {
 		return b.db.Close()
 	}
 	return nil
+}
+
+// OpenP2PFromNodeConfig opens a Store instance using a NodeConfig with replication policy.
+func OpenP2PFromNodeConfig(cfg *p2pconfig.NodeConfig) (*Store, error) {
+	if cfg == nil {
+		return nil, errors.New("node config cannot be nil")
+	}
+
+	pol, err := cfg.BuildPolicy()
+	if err != nil {
+		return nil, fmt.Errorf("failed to build replication policy: %w", err)
+	}
+
+	var topic [32]byte
+	if cfg.SwarmTopic != "" {
+		copy(topic[:], []byte(cfg.SwarmTopic))
+	}
+
+	p2pEngine, err := p2p.OpenEngine(p2p.EngineOptions{
+		DBPath:       cfg.DBPath,
+		EnableWAL:    cfg.EnableWAL,
+		EnableCrypto: cfg.EnableCrypto,
+		SwarmTopic:   topic,
+		SwarmPort:    cfg.SwarmPort,
+		Bootstrap:    cfg.Bootstrap,
+		Policy:       pol,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to open p2p engine: %w", err)
+	}
+
+	backend, err := NewBackend(Options{
+		DB:        p2pEngine.DB(),
+		Repo:      p2pEngine.Repository(),
+		Tracker:   p2pEngine.ChangesetTracker(),
+		P2PEngine: p2pEngine,
+		Policy:    pol,
+	})
+	if err != nil {
+		_ = p2pEngine.Close()
+		return nil, err
+	}
+
+	return &Store{backend: backend}, nil
 }
 
 // openSQLiteP2PBackend opens the SQLite P2P storage backend from a DSN.
@@ -188,5 +271,3 @@ func openSQLiteP2PBackend(dsn string) (storeBackend, error) {
 		EnableWAL: enableWAL,
 	})
 }
-
-

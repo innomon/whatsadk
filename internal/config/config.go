@@ -9,7 +9,9 @@ import (
 	"strconv"
 	"strings"
 
+	"go-pear/pkg/policy"
 	"gopkg.in/yaml.v3"
+	p2pconfig "sqlite-p2p/pkg/config"
 )
 
 type Config struct {
@@ -20,6 +22,7 @@ type Config struct {
 	Verification VerificationConfig `yaml:"verification"`
 	Cron         CronConfig         `yaml:"cron"`
 	SurrealDB    SurrealDBConfig    `yaml:"surrealdb"`
+	P2P          P2PConfig          `yaml:"p2p"`
 	Logging      LoggingConfig      `yaml:"logging"`
 }
 
@@ -128,6 +131,73 @@ type SurrealDBConfig struct {
 	Password  string `yaml:"password"`
 	Namespace string `yaml:"namespace"`
 	Database  string `yaml:"database"`
+}
+
+// P2PConfig defines the configuration for the embedded SQLite P2P replication engine and node access control.
+type P2PConfig struct {
+	Enabled      bool              `yaml:"enabled" json:"enabled"`
+	NodeID       string            `yaml:"node_id" json:"node_id"`
+	SwarmTopic   string            `yaml:"swarm_topic" json:"swarm_topic"`
+	SwarmPort    int               `yaml:"swarm_port" json:"swarm_port"`
+	Bootstrap    []string          `yaml:"bootstrap" json:"bootstrap"`
+	PeerAddrs    []string          `yaml:"peer_addrs" json:"peer_addrs"`
+	DBPath       string            `yaml:"db_path" json:"db_path"`
+	EnableWAL    bool              `yaml:"enable_wal" json:"enable_wal"`
+	EnableCrypto bool              `yaml:"enable_crypto" json:"enable_crypto"`
+	AutoSync     bool              `yaml:"auto_sync" json:"auto_sync"`
+	Replication  ReplicationConfig `yaml:"replication" json:"replication"`
+}
+
+// ReplicationConfig defines policy rules and access control lists for P2P replication gating.
+type ReplicationConfig struct {
+	Mode      string   `yaml:"mode" json:"mode"`
+	Whitelist []string `yaml:"whitelist,omitempty" json:"whitelist,omitempty"`
+	Blacklist []string `yaml:"blacklist,omitempty" json:"blacklist,omitempty"`
+}
+
+// ToPolicyConfig converts ReplicationConfig to go-pear's policy.Config representation.
+func (r *ReplicationConfig) ToPolicyConfig() *policy.Config {
+	if r == nil {
+		return &policy.Config{Mode: string(policy.ModeAllAllowed)}
+	}
+	return &policy.Config{
+		Mode:      r.Mode,
+		Whitelist: r.Whitelist,
+		Blacklist: r.Blacklist,
+	}
+}
+
+// ToNodeConfig converts P2PConfig to sqlite-p2p's NodeConfig representation.
+func (p *P2PConfig) ToNodeConfig() *p2pconfig.NodeConfig {
+	if p == nil {
+		return &p2pconfig.NodeConfig{
+			EnableWAL: true,
+			AutoSync:  true,
+			Replication: &policy.Config{
+				Mode: string(policy.ModeAllAllowed),
+			},
+		}
+	}
+	return &p2pconfig.NodeConfig{
+		NodeID:       p.NodeID,
+		SwarmTopic:   p.SwarmTopic,
+		SwarmPort:    p.SwarmPort,
+		Bootstrap:    p.Bootstrap,
+		PeerAddrs:    p.PeerAddrs,
+		DBPath:       p.DBPath,
+		EnableWAL:    p.EnableWAL,
+		EnableCrypto: p.EnableCrypto,
+		AutoSync:     p.AutoSync,
+		Replication:  p.Replication.ToPolicyConfig(),
+	}
+}
+
+// BuildPolicy constructs an active go-pear policy.ReplicationPolicy from P2PConfig.
+func (p *P2PConfig) BuildPolicy() (*policy.ReplicationPolicy, error) {
+	if p == nil {
+		return policy.New(policy.ModeAllAllowed), nil
+	}
+	return policy.NewFromConfig(p.Replication.ToPolicyConfig())
 }
 
 func (c *Config) FormatSurrealDSN() string {
@@ -300,6 +370,9 @@ func (c *Config) applyDefaults() {
 	if c.Logging.MaxBackups == 0 {
 		c.Logging.MaxBackups = 5
 	}
+	if c.P2P.Replication.Mode == "" {
+		c.P2P.Replication.Mode = "all"
+	}
 }
 
 func (c *Config) IsUserWhitelisted(userID string) bool {
@@ -413,5 +486,34 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if v := os.Getenv("LOG_FILE_ENABLED"); v != "" {
 		c.Logging.FileEnabled = v == "true"
+	}
+	if v := os.Getenv("P2P_ENABLED"); v == "true" {
+		c.P2P.Enabled = true
+	}
+	if v := os.Getenv("P2P_NODE_ID"); v != "" {
+		c.P2P.NodeID = v
+	}
+	if v := os.Getenv("P2P_SWARM_TOPIC"); v != "" {
+		c.P2P.SwarmTopic = v
+	}
+	if v := os.Getenv("P2P_SWARM_PORT"); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			c.P2P.SwarmPort = i
+		}
+	}
+	if v := os.Getenv("P2P_DB_PATH"); v != "" {
+		c.P2P.DBPath = v
+	}
+	if v := os.Getenv("P2P_ENABLE_WAL"); v != "" {
+		c.P2P.EnableWAL = v == "true"
+	}
+	if v := os.Getenv("P2P_ENABLE_CRYPTO"); v == "true" {
+		c.P2P.EnableCrypto = true
+	}
+	if v := os.Getenv("P2P_AUTO_SYNC"); v != "" {
+		c.P2P.AutoSync = v == "true"
+	}
+	if v := os.Getenv("P2P_REPLICATION_MODE"); v != "" {
+		c.P2P.Replication.Mode = v
 	}
 }

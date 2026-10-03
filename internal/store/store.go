@@ -9,6 +9,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+	"go-pear/pkg/policy"
 )
 
 type storeBackend interface {
@@ -102,6 +103,21 @@ func Open(dsn string) (*Store, error) {
 
 func (s *Store) Close() error {
 	return s.backend.Close()
+}
+
+// Policy returns the replication gating policy if backed by SQLite P2P.
+func (s *Store) Policy() *policy.ReplicationPolicy {
+	if pb, ok := s.backend.(*Backend); ok {
+		return pb.Policy()
+	}
+	return nil
+}
+
+// SetPolicy updates the replication gating policy if backed by SQLite P2P.
+func (s *Store) SetPolicy(p *policy.ReplicationPolicy) {
+	if pb, ok := s.backend.(*Backend); ok {
+		pb.SetPolicy(p)
+	}
 }
 
 func (s *sqlStore) Close() error {

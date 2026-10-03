@@ -154,7 +154,7 @@ Here are dialect-specific SQL examples for common operations on the `filesys` sc
 
 ### 1. Retrieve the Latest 5 Logs
 
-* **Postgres**:
+- **Postgres**:
 
   ```sql
   SELECT path, metadata->>'mime_type' AS mime_type, tmstamp 
@@ -163,7 +163,7 @@ Here are dialect-specific SQL examples for common operations on the `filesys` sc
   LIMIT 5
   ```
 
-* **SurrealDB**:
+- **SurrealDB**:
 
   ```surrealql
   SELECT path, metadata, tmstamp 
@@ -174,7 +174,7 @@ Here are dialect-specific SQL examples for common operations on the `filesys` sc
 
 ### 2. Search Messages by Path Prefix (e.g. a particular phone number)
 
-* **Postgres**:
+- **Postgres**:
 
   ```sql
   SELECT path, tmstamp 
@@ -183,7 +183,7 @@ Here are dialect-specific SQL examples for common operations on the `filesys` sc
   ORDER BY tmstamp DESC
   ```
 
-* **SurrealDB**:
+- **SurrealDB**:
 
   ```surrealql
   SELECT path, tmstamp 
@@ -195,6 +195,7 @@ Here are dialect-specific SQL examples for common operations on the `filesys` sc
 ### 3. Filter by Metadata Fields (JSON / Document search)
 
 In PostgreSQL, `metadata` is stored as a native `JSONB` column. In SurrealDB, it is stored as a JSON-encoded string.
+
 - **Postgres**:
 
   ```sql
@@ -204,7 +205,7 @@ In PostgreSQL, `metadata` is stored as a native `JSONB` column. In SurrealDB, it
   ORDER BY tmstamp DESC
   ```
 
-* **SurrealDB**:
+- **SurrealDB**:
 
   ```surrealql
   SELECT path, tmstamp 
@@ -215,7 +216,7 @@ In PostgreSQL, `metadata` is stored as a native `JSONB` column. In SurrealDB, it
 
 ### 4. Search Content by Substring (Text Message)
 
-* **Postgres** (Note: `content` is a `BYTEA` column in Postgres, so it must be cast/encoded to match text):
+- **Postgres** (Note: `content` is a `BYTEA` column in Postgres, so it must be cast/encoded to match text):
 
   ```sql
   SELECT path, encode(content, 'escape') AS message 
@@ -223,7 +224,7 @@ In PostgreSQL, `metadata` is stored as a native `JSONB` column. In SurrealDB, it
   WHERE encode(content, 'escape') LIKE '%hello%'
   ```
 
-* **SurrealDB**:
+- **SurrealDB**:
 
   ```surrealql
   SELECT path, content 

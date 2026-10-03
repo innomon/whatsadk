@@ -21,6 +21,34 @@ adk:
 #  namespace: "whatsadk"
 #  database: "whatsadk"
 
+# Optional: SQLite P2P Decentralized Storage & Replication Configuration
+# Supports peer-to-peer Autobase replication and cryptographic node access control (go-pear policy).
+# If enabled, store_dsn can use sqlite-p2p://, sqlite://, p2p://, or pear://.
+#p2p:
+#  enabled: false
+#  node_id: "whatsadk-node-1"
+#  swarm_topic: "whatsadk-mesh-topic"
+#  swarm_port: 0
+#  bootstrap:
+#    - "192.168.1.100:43219"
+#  peer_addrs: []
+#  db_path: "data/whatsadk_p2p.db"
+#  enable_wal: true
+#  enable_crypto: false
+#  auto_sync: true
+#  replication:
+#    # Gating mode:
+#    # - "all": Open discovery, replicate with any peer (default)
+#    # - "whitelist": Strict replication access, permit only explicitly whitelisted peer public keys
+#    # - "blacklist": Permissive replication, block explicitly blacklisted peer public keys
+#    mode: "all"
+#    whitelist:
+#      # 64-character hexadecimal Ed25519 public keys ([32]byte hex strings)
+#      # - "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+#    blacklist:
+#      # 64-character hexadecimal Ed25519 public keys ([32]byte hex strings)
+#      # - "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+
 auth:
   jwt:
     # private_key_path: "secrets/jwt_private.pem"

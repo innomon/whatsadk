@@ -11,6 +11,7 @@ This file acts as a registry for the development tracks of the WhatsADK project.
 - [x] [mcp-filesys](tracks/mcp-filesys/) - Accessing DB filesys logs via MCP.
 - [x] [mcp-server](tracks/mcp-server/) - Multiplexed command queue MCP server.
 - [x] [media-bridge](tracks/media-bridge/) - Resizing and converting inbound WhatsApp media formats.
+- [x] [p2p-replication-gating](tracks/p2p-replication-gating/spec.md) - P2P replication gating and node access control configuration.
 - [x] [reverse-otp](tracks/reverse-otp/plan.md) - Two-factor authentication via WhatsApp and signed callbacks.
 - [x] [router](tracks/router/) - Router agent for multi-app routing.
 - [x] [router-in-process](tracks/router-in-process/plan.md) - In-process agent execution for routing.

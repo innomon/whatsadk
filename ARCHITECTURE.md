@@ -21,7 +21,7 @@ graph TD
 
     subgraph gateway["WhatsADK Gateway (Multi-Device or WABA)"]
         gw_core["Gateway Core"]:::main
-        storage["PG/Surreal Storage"]:::db
+        storage["Storage (PostgreSQL / SurrealDB / SQLite-P2P)"]:::db
         jwt_auth["JWT Auth (RS256)"]:::main
         verify_handler["Verification Handler"]:::main
     end

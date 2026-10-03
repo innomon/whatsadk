@@ -154,4 +154,3 @@ func TestStore_Open_SQLiteP2P(t *testing.T) {
 		t.Fatalf("expected 1 command with id 1, got %+v", cmds)
 	}
 }
-

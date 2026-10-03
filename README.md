@@ -94,6 +94,15 @@ make build
 | `SURREALDB_PASSWORD` | No | SurrealDB password |
 | `SURREALDB_NAMESPACE` | No | SurrealDB namespace |
 | `SURREALDB_DATABASE` | No | SurrealDB database |
+| `P2P_ENABLED` | No | Enable embedded SQLite P2P storage backend (`true`) |
+| `P2P_NODE_ID` | No | Node identifier for P2P cluster |
+| `P2P_SWARM_TOPIC` | No | P2P swarm discovery topic |
+| `P2P_SWARM_PORT` | No | P2P swarm listener port (default: 0 for dynamic) |
+| `P2P_DB_PATH` | No | Database file path for SQLite P2P (default: `data/whatsadk_p2p.db`) |
+| `P2P_ENABLE_WAL` | No | Enable Write-Ahead Logging for SQLite P2P (default: `true`) |
+| `P2P_ENABLE_CRYPTO` | No | Enable cryptographic key registry encryption (`true`) |
+| `P2P_AUTO_SYNC` | No | Enable automated P2P replication synchronization (default: `true`) |
+| `P2P_REPLICATION_MODE` | No | Replication gating mode (`all`, `whitelist`, `blacklist`) |
 | `CONFIG_FILE` | No | Path to config file |
 
 ### Config File
@@ -123,6 +132,27 @@ surrealdb:
   password: "root"
   namespace: "whatsadk"
   database: "whatsadk"
+
+# Optional: SQLite P2P Decentralized Storage & Replication Gating Configuration
+# Supports peer-to-peer Autobase replication and cryptographic node access control (go-pear policy).
+p2p:
+  enabled: false
+  node_id: "whatsadk-node-1"
+  swarm_topic: "whatsadk-mesh-topic"
+  swarm_port: 0
+  bootstrap:
+    - "192.168.1.100:43219"
+  peer_addrs: []
+  db_path: "data/whatsadk_p2p.db"
+  enable_wal: true
+  enable_crypto: false
+  auto_sync: true
+  replication:
+    mode: "all"  # "all", "whitelist", or "blacklist"
+    whitelist:
+      # - "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    blacklist:
+      # - "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
 
 adk:
   endpoint: "http://localhost:8000"  # ADK service URL
