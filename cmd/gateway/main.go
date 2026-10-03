@@ -1,3 +1,10 @@
+// Package main provides the Multi-Device (QR Code) WhatsApp-ADK Gateway executable.
+//
+// The gateway establishes a linked multi-device session with WhatsApp using whatsmeow,
+// bridging incoming messages to Google ADK agent endpoints over REST or SSE streaming.
+// It provides built-in media transcoding, JWT authentication (RS256), OAuth logins (EdDSA),
+// reverse OTP verification, cron heartbeat scheduling, and multi-database persistence
+// (PostgreSQL, SurrealDB, and SQLite-P2P).
 package main
 
 import (
@@ -18,6 +25,7 @@ import (
 	"github.com/innomon/whatsadk/internal/whatsapp"
 )
 
+// main is the entry point for the Multi-Device WhatsApp-ADK Gateway.
 func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

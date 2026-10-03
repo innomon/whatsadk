@@ -1,3 +1,9 @@
+// Package main provides the WhatsApp Business API (WABA) Cloud Gateway executable.
+//
+// It exposes HTTPS webhook endpoints to receive messages and media events from Meta's
+// WhatsApp Business Cloud API and relays them to remote Google ADK agents. Responses
+// and media attachments from ADK agents are sent back to WhatsApp users via the Meta
+// Graph API.
 package main
 
 import (
@@ -18,6 +24,7 @@ import (
 	"github.com/innomon/whatsadk/internal/whatsapp"
 )
 
+// main is the entry point for the WABA Cloud Gateway.
 func main() {
 	cfg, err := config.Load()
 	if err != nil {

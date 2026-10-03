@@ -259,13 +259,76 @@ To trigger a silent ignore, the ADK response should include an `inlineData` part
 
 The gateway will log the reason and record it in the `filesys` table as a "response" with an error metadata `Ignored: <reason>`.
 
-### API Endpoints Used
+### ADK Endpoint & Protocol Specification
 
-| Endpoint | Method | Description |
-| ---------- | -------- | ------------- |
-| `/apps/{app}/users/{user}/sessions/{session}` | POST | Create or reuse session |
-| `/run` | POST | Send message, get single response |
-| `/run_sse` | POST | Send message, stream response via SSE |
+The gateway forwards WhatsApp user messages to the backend ADK service specified by `cfg.ADK.Endpoint` (configured in `config.yaml` as `adk.endpoint` or via the `ADK_ENDPOINT` environment variable, defaulting to `http://localhost:8000/api`).
+
+All requests to `{endpoint}` automatically include an `Authorization: Bearer <token>` header (using RS256 JWT when configured, or static API key).
+
+#### 1. Ensure Session
+- **URL**: `POST {endpoint}/apps/{appName}/users/{userID}/sessions/{sessionID}`
+- **Headers**:
+  - `Content-Type: application/json`
+  - `Authorization: Bearer <jwt-or-api-key>`
+- **Request Body**: `{}` (or optional session state `{"state": {...}}`)
+- **Behavior**: Called before chat invocations to guarantee that the session exists for `userID` (phone number). If the session already exists, HTTP `409 Conflict` (or `"already exists"` in body) is treated as success.
+
+#### 2. Non-Streaming Chat (`streaming: false`)
+- **URL**: `POST {endpoint}/run`
+- **Headers**:
+  - `Content-Type: application/json`
+  - `Authorization: Bearer <jwt-or-api-key>`
+- **Request Body** (`RunRequest`):
+  ```json
+  {
+    "appName": "whatsadk",
+    "userId": "919876543210",
+    "sessionId": "919876543210",
+    "newMessage": {
+      "role": "user",
+      "parts": [
+        { "text": "Hello agent!" },
+        {
+          "inlineData": {
+            "mimeType": "image/jpeg",
+            "data": "<base64-encoded-image>"
+          }
+        }
+      ]
+    }
+  }
+  ```
+- **Response**: JSON array of ADK `Event` objects:
+  ```json
+  [
+    {
+      "author": "agent",
+      "content": {
+        "role": "model",
+        "parts": [
+          { "text": "Hello! How can I help you today?" }
+        ]
+      },
+      "partial": false
+    }
+  ]
+  ```
+- **Response Extraction**: The gateway parses the array and extracts parts from the final non-partial `model` event (`author == "model"` or `content.role == "model"` where `partial == false`).
+
+#### 3. Streaming Chat (`streaming: true` / SSE)
+- **URL**: `POST {endpoint}/run_sse`
+- **Headers**:
+  - `Content-Type: application/json`
+  - `Accept: text/event-stream`
+  - `Authorization: Bearer <jwt-or-api-key>`
+- **Request Body**: Same `RunRequest` schema with `"streaming": true`.
+- **Response**: Server-Sent Events stream of JSON `Event` objects formatted as `data: {...}\n\n`, terminating with `data: [DONE]`.
+
+| Endpoint | Method | Purpose |
+| -------- | ------ | ------- |
+| `{endpoint}/apps/{app}/users/{user}/sessions/{session}` | POST | Ensure user session exists on ADK service |
+| `{endpoint}/run` | POST | Synchronous single-response chat completion |
+| `{endpoint}/run_sse` | POST | Server-Sent Events (SSE) streaming chat completion |
 
 ## JWT Authentication
 

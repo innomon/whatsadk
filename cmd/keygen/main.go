@@ -1,3 +1,7 @@
+// Package main provides a cryptographic key generation utility for WhatsADK.
+//
+// It generates Ed25519 key pairs encoded as PKCS#8 PEM files for WhatsApp-based
+// OAuth authentication and displays the corresponding base64url-encoded public key.
 package main
 
 import (
@@ -14,6 +18,7 @@ import (
 	"github.com/innomon/whatsadk/internal/auth"
 )
 
+// main is the entry point for the keygen CLI utility.
 func main() {
 	outPath := flag.String("out", "secrets/oauth_ed25519.pem", "output path for the Ed25519 private key PEM file")
 	flag.Parse()

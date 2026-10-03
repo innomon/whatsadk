@@ -1,3 +1,8 @@
+// Package main provides the mock ADK agent TUI simulator executable.
+//
+// It runs an HTTP mock server listening for ADK /run requests from WhatsADK and renders
+// incoming requests and payloads in a terminal user interface (TUI) for local inspection
+// and debugging without requiring a live ADK backend.
 package main
 
 import (
@@ -9,6 +14,7 @@ import (
 	"github.com/innomon/whatsadk/internal/adksim"
 )
 
+// main starts the mock ADK agent server and launches the Bubble Tea monitoring TUI.
 func main() {
 	port := flag.Int("port", 8080, "Port to listen on")
 	appName := flag.String("app", "whatsadk", "App name for ADK simulation")

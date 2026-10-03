@@ -1,3 +1,10 @@
+// Package main implements the Model Context Protocol (MCP) server for WhatsADK.
+//
+// The server communicates over standard I/O (stdio transport) and exposes tools
+// allowing autonomous AI agents (such as Claude, Gemini CLI, or Pi) to interact with
+// WhatsApp. Agents can send messages, inspect message logs, manage the global
+// blacklist, query contacts, manage multi-app routing, and interact with the virtual
+// filesys table across PostgreSQL, SurrealDB, and SQLite-P2P backends.
 package main
 
 import (
@@ -14,6 +21,7 @@ import (
 	"github.com/innomon/whatsadk/internal/store"
 )
 
+// SendMessageArgs represents arguments for the send_message MCP tool.
 type SendMessageArgs struct {
 	JID         string             `json:"jid"`
 	Text        string             `json:"text,omitempty"`
@@ -22,6 +30,7 @@ type SendMessageArgs struct {
 	MsgRef      string             `json:"msg_ref,omitempty"`
 }
 
+// SendMessage enqueues and sends a multi-modal message (text and/or media) to a WhatsApp user.
 func SendMessage(ctx context.Context, s *store.Store, args SendMessageArgs) (*mcp.CallToolResult, any, error) {
 	if args.JID == "" {
 		return nil, nil, fmt.Errorf("jid is required")
@@ -73,11 +82,13 @@ func SendMessage(ctx context.Context, s *store.Store, args SendMessageArgs) (*mc
 	}, nil, nil
 }
 
+// GetRecentMessagesArgs represents arguments for the get_recent_messages MCP tool.
 type GetRecentMessagesArgs struct {
 	JID   string `json:"jid,omitempty"`
 	Limit int    `json:"limit,omitempty"`
 }
 
+// GetRecentMessages retrieves recent message logs globally or for a specific user.
 func GetRecentMessages(ctx context.Context, s *store.Store, args GetRecentMessagesArgs) (*mcp.CallToolResult, any, error) {
 	limit := args.Limit
 	if limit <= 0 {
@@ -107,11 +118,13 @@ func GetRecentMessages(ctx context.Context, s *store.Store, args GetRecentMessag
 	}, nil, nil
 }
 
+// BlacklistAddArgs represents arguments for the blacklist_add MCP tool.
 type BlacklistAddArgs struct {
 	Phone  string `json:"phone"`
 	Reason string `json:"reason"`
 }
 
+// BlacklistAdd adds a phone number to the local blacklist and triggers a remote WhatsApp block.
 func BlacklistAdd(ctx context.Context, s *store.Store, args BlacklistAddArgs) (*mcp.CallToolResult, any, error) {
 	// 1. Local Shadow Ban
 	if err := s.AddBlacklist(ctx, args.Phone, args.Reason); err != nil {
@@ -155,10 +168,12 @@ func BlacklistAdd(ctx context.Context, s *store.Store, args BlacklistAddArgs) (*
 	}, nil, nil
 }
 
+// BlacklistRemoveArgs represents arguments for the blacklist_remove MCP tool.
 type BlacklistRemoveArgs struct {
 	Phone string `json:"phone"`
 }
 
+// BlacklistRemove removes a phone number from the local blacklist and triggers a remote WhatsApp unblock.
 func BlacklistRemove(ctx context.Context, s *store.Store, args BlacklistRemoveArgs) (*mcp.CallToolResult, any, error) {
 	// 1. Local Removal
 	if err := s.RemoveBlacklist(ctx, args.Phone); err != nil {
@@ -202,8 +217,10 @@ func BlacklistRemove(ctx context.Context, s *store.Store, args BlacklistRemoveAr
 	}, nil, nil
 }
 
+// BlacklistGetRemoteArgs represents arguments for the blacklist_get_remote MCP tool.
 type BlacklistGetRemoteArgs struct{}
 
+// BlacklistGetRemote fetches the official blocklist directly from WhatsApp servers.
 func BlacklistGetRemote(ctx context.Context, s *store.Store, _ BlacklistGetRemoteArgs) (*mcp.CallToolResult, any, error) {
 	cmdID, err := s.EnqueueCommand(ctx, "get_blocklist", nil)
 	if err != nil {
@@ -228,10 +245,12 @@ func BlacklistGetRemote(ctx context.Context, s *store.Store, _ BlacklistGetRemot
 	}, nil, nil
 }
 
+// QueryContactsArgs represents arguments for the query_contacts MCP tool.
 type QueryContactsArgs struct {
 	Query string `json:"query"`
 }
 
+// QueryContacts searches for WhatsApp contacts by name or JID.
 func QueryContacts(ctx context.Context, s *store.Store, args QueryContactsArgs) (*mcp.CallToolResult, any, error) {
 	contacts, err := s.ListContacts(ctx, args.Query)
 	if err != nil {
@@ -247,11 +266,13 @@ func QueryContacts(ctx context.Context, s *store.Store, args QueryContactsArgs) 
 	}, nil, nil
 }
 
+// GetLogsArgs represents arguments for the get_message_logs MCP tool.
 type GetLogsArgs struct {
 	Phone string `json:"phone"`
 	Limit int    `json:"limit"`
 }
 
+// GetLogs retrieves recent message logs for a specific phone number or user.
 func GetLogs(ctx context.Context, s *store.Store, args GetLogsArgs) (*mcp.CallToolResult, any, error) {
 	limit := args.Limit
 	if limit <= 0 {
@@ -271,8 +292,10 @@ func GetLogs(ctx context.Context, s *store.Store, args GetLogsArgs) (*mcp.CallTo
 	}, nil, nil
 }
 
+// GetDatabaseTypeArgs represents arguments for the get_database_type MCP tool.
 type GetDatabaseTypeArgs struct{}
 
+// GetDatabaseType discovers the active database backend type (postgres, surrealdb, or sqlite-p2p).
 func GetDatabaseType(ctx context.Context, s *store.Store, _ GetDatabaseTypeArgs) (*mcp.CallToolResult, any, error) {
 	dbType := s.DatabaseType()
 	return &mcp.CallToolResult{
@@ -284,10 +307,12 @@ func GetDatabaseType(ctx context.Context, s *store.Store, _ GetDatabaseTypeArgs)
 	}, nil, nil
 }
 
+// FileSysSQLSelectArgs represents arguments for the filesys_sql_select MCP tool.
 type FileSysSQLSelectArgs struct {
 	Query string `json:"query"`
 }
 
+// FileSysSQLSelect executes custom SELECT queries against the filesys table or view.
 func FileSysSQLSelect(ctx context.Context, s *store.Store, args FileSysSQLSelectArgs) (*mcp.CallToolResult, any, error) {
 	// Simple security check: must be a SELECT
 	if len(args.Query) < 6 || args.Query[:6] != "SELECT" && args.Query[:6] != "select" {
@@ -309,12 +334,14 @@ func FileSysSQLSelect(ctx context.Context, s *store.Store, args FileSysSQLSelect
 	}, nil, nil
 }
 
+// FileSysPutArgs represents arguments for the filesys_put MCP tool.
 type FileSysPutArgs struct {
 	Path     string          `json:"path"`
 	Metadata json.RawMessage `json:"metadata,omitempty"`
 	Content  string          `json:"content,omitempty"`
 }
 
+// FileSysPut creates or updates an entry in the virtual file system table.
 func FileSysPut(ctx context.Context, s *store.Store, args FileSysPutArgs) (*mcp.CallToolResult, any, error) {
 	if args.Path == "" {
 		return nil, nil, fmt.Errorf("path is required")
@@ -334,10 +361,12 @@ func FileSysPut(ctx context.Context, s *store.Store, args FileSysPutArgs) (*mcp.
 	}, nil, nil
 }
 
+// FileSysGetArgs represents arguments for the filesys_get MCP tool.
 type FileSysGetArgs struct {
 	Path string `json:"path"`
 }
 
+// FileSysGet retrieves a file system entry by path.
 func FileSysGet(ctx context.Context, s *store.Store, args FileSysGetArgs) (*mcp.CallToolResult, any, error) {
 	if args.Path == "" {
 		return nil, nil, fmt.Errorf("path is required")
@@ -361,10 +390,12 @@ func FileSysGet(ctx context.Context, s *store.Store, args FileSysGetArgs) (*mcp.
 	}, nil, nil
 }
 
+// FileSysDeleteArgs represents arguments for the filesys_delete MCP tool.
 type FileSysDeleteArgs struct {
 	Path string `json:"path"`
 }
 
+// FileSysDelete deletes a file system entry by path.
 func FileSysDelete(ctx context.Context, s *store.Store, args FileSysDeleteArgs) (*mcp.CallToolResult, any, error) {
 	if args.Path == "" {
 		return nil, nil, fmt.Errorf("path is required")
@@ -384,11 +415,13 @@ func FileSysDelete(ctx context.Context, s *store.Store, args FileSysDeleteArgs) 
 	}, nil, nil
 }
 
+// FileSysListArgs represents arguments for the filesys_list MCP tool.
 type FileSysListArgs struct {
 	Prefix string `json:"prefix,omitempty"`
 	Limit  int    `json:"limit,omitempty"`
 }
 
+// FileSysList lists file system entries matching an optional path prefix.
 func FileSysList(ctx context.Context, s *store.Store, args FileSysListArgs) (*mcp.CallToolResult, any, error) {
 	entries, err := s.ListFiles(ctx, args.Prefix, args.Limit)
 	if err != nil {
@@ -405,10 +438,12 @@ func FileSysList(ctx context.Context, s *store.Store, args FileSysListArgs) (*mc
 	}, nil, nil
 }
 
+// RouterGetAppsArgs represents arguments for the router_get_apps MCP tool.
 type RouterGetAppsArgs struct {
 	UserID string `json:"userId"`
 }
 
+// RouterGetApps retrieves the provisioned routing apps for a specific user.
 func RouterGetApps(ctx context.Context, s *store.Store, args RouterGetAppsArgs) (*mcp.CallToolResult, any, error) {
 	if args.UserID == "" {
 		return nil, nil, fmt.Errorf("userId is required")
@@ -436,11 +471,13 @@ func RouterGetApps(ctx context.Context, s *store.Store, args RouterGetAppsArgs) 
 	}, nil, nil
 }
 
+// RouterSetAppsArgs represents arguments for the router_set_apps MCP tool.
 type RouterSetAppsArgs struct {
 	UserID string   `json:"userId"`
 	Apps   []string `json:"apps"`
 }
 
+// RouterSetApps configures the list of provisioned apps for a specific user.
 func RouterSetApps(ctx context.Context, s *store.Store, args RouterSetAppsArgs) (*mcp.CallToolResult, any, error) {
 	if args.UserID == "" {
 		return nil, nil, fmt.Errorf("userId is required")
@@ -463,10 +500,12 @@ func RouterSetApps(ctx context.Context, s *store.Store, args RouterSetAppsArgs) 
 	}, nil, nil
 }
 
+// RouterDeleteAppsArgs represents arguments for the router_delete_apps MCP tool.
 type RouterDeleteAppsArgs struct {
 	UserID string `json:"userId"`
 }
 
+// RouterDeleteApps removes provisioned apps for a specific user.
 func RouterDeleteApps(ctx context.Context, s *store.Store, args RouterDeleteAppsArgs) (*mcp.CallToolResult, any, error) {
 	if args.UserID == "" {
 		return nil, nil, fmt.Errorf("userId is required")
@@ -485,10 +524,12 @@ func RouterDeleteApps(ctx context.Context, s *store.Store, args RouterDeleteApps
 	}, nil, nil
 }
 
+// RouterGetStateArgs represents arguments for the router_get_state MCP tool.
 type RouterGetStateArgs struct {
 	UserID string `json:"userId"`
 }
 
+// RouterGetState retrieves the active routing session state for a specific user.
 func RouterGetState(ctx context.Context, s *store.Store, args RouterGetStateArgs) (*mcp.CallToolResult, any, error) {
 	if args.UserID == "" {
 		return nil, nil, fmt.Errorf("userId is required")
@@ -516,11 +557,13 @@ func RouterGetState(ctx context.Context, s *store.Store, args RouterGetStateArgs
 	}, nil, nil
 }
 
+// RouterSetStateArgs represents arguments for the router_set_state MCP tool.
 type RouterSetStateArgs struct {
 	UserID string          `json:"userId"`
 	State  json.RawMessage `json:"state"`
 }
 
+// RouterSetState updates the active routing session state for a specific user.
 func RouterSetState(ctx context.Context, s *store.Store, args RouterSetStateArgs) (*mcp.CallToolResult, any, error) {
 	if args.UserID == "" {
 		return nil, nil, fmt.Errorf("userId is required")
@@ -539,10 +582,12 @@ func RouterSetState(ctx context.Context, s *store.Store, args RouterSetStateArgs
 	}, nil, nil
 }
 
+// RouterClearStateArgs represents arguments for the router_clear_state MCP tool.
 type RouterClearStateArgs struct {
 	UserID string `json:"userId"`
 }
 
+// RouterClearState clears the active routing session state for a specific user.
 func RouterClearState(ctx context.Context, s *store.Store, args RouterClearStateArgs) (*mcp.CallToolResult, any, error) {
 	if args.UserID == "" {
 		return nil, nil, fmt.Errorf("userId is required")
@@ -561,6 +606,7 @@ func RouterClearState(ctx context.Context, s *store.Store, args RouterClearState
 	}, nil, nil
 }
 
+// main initializes the WhatsADK MCP server over stdio.
 func main() {
 	cfg, err := config.Load()
 	if err != nil {

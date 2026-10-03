@@ -1,3 +1,8 @@
+// Package main provides the dbutil CLI utility for database export and import operations.
+//
+// It exports and imports WhatsApp database records (contacts, message logs, blacklist,
+// and command queue entries) to and from JSON Lines (JSONL) files, enabling backups and
+// seamless migrations between PostgreSQL, SurrealDB, and SQLite-P2P.
 package main
 
 import (
@@ -16,34 +21,45 @@ import (
 	"github.com/innomon/whatsadk/internal/store"
 )
 
+// Command defines the interface for a dbutil CLI subcommand.
 type Command interface {
 	Name() string
 	Description() string
 	Run(ctx context.Context, s *store.Store, args []string) error
 }
 
+// exportCmd implements the export subcommand.
 type exportCmd struct{}
 
-func (c *exportCmd) Name() string        { return "export" }
+// Name returns the subcommand name "export".
+func (c *exportCmd) Name() string { return "export" }
+
+// Description returns a brief summary of the export command.
 func (c *exportCmd) Description() string { return "Export database contents to a JSONL file" }
 
+// importCmd implements the import subcommand.
 type importCmd struct{}
 
-func (c *importCmd) Name() string        { return "import" }
+// Name returns the subcommand name "import".
+func (c *importCmd) Name() string { return "import" }
+
+// Description returns a brief summary of the import command.
 func (c *importCmd) Description() string { return "Import database contents from a JSONL file" }
 
-// JSONL format structures
+// ExportRecord represents a single typed record envelope in a JSONL file.
 type ExportRecord struct {
 	Type string          `json:"type"`
 	Data json.RawMessage `json:"data"`
 }
 
+// BlacklistData represents exported phone blacklist entries.
 type BlacklistData struct {
 	Phone     string    `json:"phone"`
 	Reason    string    `json:"reason"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// ContactData represents exported WhatsApp contact roster entries.
 type ContactData struct {
 	OurJID       string `json:"our_jid"`
 	TheirJID     string `json:"their_jid"`
@@ -53,6 +69,7 @@ type ContactData struct {
 	BusinessName string `json:"business_name"`
 }
 
+// CommandData represents exported asynchronous WhatsApp command entries.
 type CommandData struct {
 	ID        int64           `json:"id"`
 	Command   string          `json:"command"`
@@ -63,6 +80,7 @@ type CommandData struct {
 	UpdatedAt time.Time       `json:"updated_at"`
 }
 
+// FileData represents exported virtual file system log and media entries.
 type FileData struct {
 	Path      string    `json:"path"`
 	Metadata  *string   `json:"metadata,omitempty"`
@@ -70,6 +88,7 @@ type FileData struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
+// Run executes the database export command.
 func (c *exportCmd) Run(ctx context.Context, s *store.Store, args []string) error {
 	fs := flag.NewFlagSet("export", flag.ContinueOnError)
 	outPath := fs.String("out", "export.jsonl", "Output path for JSONL export (use '-' for stdout)")
@@ -203,6 +222,7 @@ func (c *exportCmd) Run(ctx context.Context, s *store.Store, args []string) erro
 	return nil
 }
 
+// Run executes the database import command from a JSONL file or standard input.
 func (c *importCmd) Run(ctx context.Context, s *store.Store, args []string) error {
 	fs := flag.NewFlagSet("import", flag.ContinueOnError)
 	inPath := fs.String("in", "export.jsonl", "Input path for JSONL import (use '-' for stdin)")
@@ -315,6 +335,7 @@ func (c *importCmd) Run(ctx context.Context, s *store.Store, args []string) erro
 	return nil
 }
 
+// main is the entry point for the dbutil CLI tool.
 func main() {
 	if len(os.Args) < 2 {
 		printUsage()
@@ -373,6 +394,7 @@ func main() {
 	fmt.Println("Success!")
 }
 
+// printUsage outputs usage instructions for the dbutil CLI tool.
 func printUsage() {
 	fmt.Println("Usage: dbutil <command> [options]")
 	fmt.Println("Commands:")

@@ -170,14 +170,23 @@ Implements the integration with Meta's WhatsApp Business Cloud API:
 
 ### `internal/agent` — ADK Client
 
-HTTP client for the ADK Agent service. Supports two modes:
+HTTP client for communicating with the backend Google ADK (Agent Development Kit) service specified by `cfg.ADK.Endpoint` (`c.endpoint`).
 
-- **`/run` (synchronous)** — POSTs a `RunRequest`, receives a JSON array of `Event` objects
-- **`/run_sse` (streaming)** — POSTs to `/run_sse` with `Accept: text/event-stream`, parses SSE `data:` lines
-
-Both modes extract the final model response from the event list (last non-partial `model` event). The client also manages per-user sessions via `POST /apps/{app}/users/{user}/sessions/{session}`.
-
-Authentication is layered: JWT (RS256) takes priority over static API key.
+- **Session Initialization (`EnsureSession`)**:
+  - `POST {endpoint}/apps/{app}/users/{user}/sessions/{session}`
+  - Ensures a persistent session is created on the ADK server for the user before dispatching messages. HTTP 200 and 409 (Conflict/already exists) are treated as success.
+- **Synchronous Execution (`chatRun`)**:
+  - `POST {endpoint}/run`
+  - Sends a `RunRequest` JSON payload (`appName`, `userId`, `sessionId`, `newMessage: { role: "user", parts: [...] }`) and receives a JSON array of `Event` objects.
+- **Streaming Execution (`chatSSE`)**:
+  - `POST {endpoint}/run_sse`
+  - Sends a `RunRequest` with `streaming: true` and `Accept: text/event-stream` header. Reads Server-Sent Events (`data: {...}`) line-by-line until `data: [DONE]`.
+- **Response Extraction (`extractFinalParts`)**:
+  - Scans events in reverse to extract `parts` from the final non-partial `model` event (`event.Content.Role == "model" && !event.Partial`).
+  - Supports silent ignore via `application/x-adk-silent-ignore` MIME type.
+- **Authentication**:
+  - Attached to all requests via `Authorization: Bearer <token>`.
+  - Layered authentication: RSA RS256 JWT generator takes precedence over static API keys (`cfg.ADK.APIKey`).
 
 ### `internal/auth` — Authentication
 
