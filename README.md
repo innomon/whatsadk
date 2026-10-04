@@ -7,7 +7,7 @@ A high-performance Go gateway that connects WhatsApp to remote ADK Agent service
 - **Dual Mode Connectivity:**
   - **QR Code Mode:** Link any WhatsApp account by scanning a QR code (built on `whatsmeow`).
   - **WABA Mode:** Connect via the official WhatsApp Business Cloud API with webhook support.
-- **Persistent Storage:** WhatsApp sessions, contacts, and message logs are stored in PostgreSQL.
+- **Persistent Storage:** WhatsApp sessions, contacts, and message logs can be stored in PostgreSQL, SurrealDB, or embedded pure Go **[SQLite P2P Decentralized Storage](docs/sqlite-p2p-storage.md)** with automatic LAN/WAN mesh replication.
 - **Two-Way Media Bridge:** Automatically intercept, transform, and forward WhatsApp media (images, audio, video) to the ADK agent.
   - **Normalization:** Images are normalized to **896x896 JPEG**; audio is converted to **16kHz Mono WAV**.
   - **Location:** Native location shares are standardized as **Text Parts** (`Location: [lat, lng]`) for the agent.

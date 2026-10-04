@@ -18,10 +18,33 @@ func TestNewClient_SQLiteP2P(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	dbPath := filepath.Join(tmpDir, "session.db")
-	cfg := &config.Config{
-		WhatsApp: config.WhatsAppConfig{
-			StoreDSN: "sqlite-p2p://" + dbPath,
+	tests := []struct {
+		name string
+		dsn  string
+	}{
+		{
+			name: "sqlite-p2p with wal parameter",
+			dsn:  "sqlite-p2p://" + filepath.Join(tmpDir, "sub", "session1.db") + "?wal=true",
+		},
+		{
+			name: "sqlite-p2p standard path",
+			dsn:  "sqlite-p2p://" + filepath.Join(tmpDir, "session2.db"),
+		},
+		{
+			name: "sqlite prefix with wal",
+			dsn:  "sqlite://" + filepath.Join(tmpDir, "session3.db") + "?wal=true",
+		},
+		{
+			name: "p2p prefix with wal",
+			dsn:  "p2p://" + filepath.Join(tmpDir, "session4.db") + "?wal=true",
+		},
+		{
+			name: "file URI with foreign keys already set",
+			dsn:  "file:" + filepath.Join(tmpDir, "session5.db") + "?_foreign_keys=on",
+		},
+		{
+			name: "memory database",
+			dsn:  "sqlite-p2p://:memory:",
 		},
 	}
 
@@ -31,11 +54,21 @@ func TestNewClient_SQLiteP2P(t *testing.T) {
 	}
 	defer st.Close()
 
-	client, err := New(ctx, cfg, nil, nil, nil, st)
-	if err != nil {
-		t.Fatalf("failed to initialize whatsapp client with sqlite-p2p DSN: %v", err)
-	}
-	if client == nil {
-		t.Fatal("expected non-nil client")
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &config.Config{
+				WhatsApp: config.WhatsAppConfig{
+					StoreDSN: tc.dsn,
+				},
+			}
+
+			client, err := New(ctx, cfg, nil, nil, nil, st)
+			if err != nil {
+				t.Fatalf("failed to initialize whatsapp client with DSN %q: %v", tc.dsn, err)
+			}
+			if client == nil {
+				t.Fatal("expected non-nil client")
+			}
+		})
 	}
 }

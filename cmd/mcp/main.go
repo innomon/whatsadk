@@ -613,9 +613,21 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	s, err := store.Open(cfg.WhatsApp.StoreDSN)
-	if err != nil {
-		log.Fatalf("Failed to open store: %v", err)
+	var s *store.Store
+	if cfg.P2P.Enabled {
+		s, err = store.OpenP2PFromNodeConfig(cfg.P2P.ToNodeConfig())
+		if err != nil {
+			log.Fatalf("Failed to open P2P store: %v", err)
+		}
+	} else {
+		dbURL := cfg.Verification.DatabaseURL
+		if dbURL == "" {
+			dbURL = cfg.WhatsApp.StoreDSN
+		}
+		s, err = store.Open(dbURL)
+		if err != nil {
+			log.Fatalf("Failed to open store: %v", err)
+		}
 	}
 	defer s.Close()
 

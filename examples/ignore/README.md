@@ -99,7 +99,7 @@ To serve **two WhatsApp numbers simultaneously** on the same machine using `sqli
 
    ```bash
    cd examples/ignore
-   go run main.go web api
+   go run main.go web api webui
    ```
 
 2. **Start Gateway Instance 1 for WhatsApp Number 1** (Terminal 2):

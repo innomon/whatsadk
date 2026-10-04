@@ -215,20 +215,7 @@ func OpenP2PFromNodeConfig(cfg *p2pconfig.NodeConfig) (*Store, error) {
 		return nil, fmt.Errorf("failed to build replication policy: %w", err)
 	}
 
-	var topic [32]byte
-	if cfg.SwarmTopic != "" {
-		copy(topic[:], []byte(cfg.SwarmTopic))
-	}
-
-	p2pEngine, err := p2p.OpenEngine(p2p.EngineOptions{
-		DBPath:       cfg.DBPath,
-		EnableWAL:    cfg.EnableWAL,
-		EnableCrypto: cfg.EnableCrypto,
-		SwarmTopic:   topic,
-		SwarmPort:    cfg.SwarmPort,
-		Bootstrap:    cfg.Bootstrap,
-		Policy:       pol,
-	})
+	p2pEngine, err := p2p.OpenEngineFromNodeConfig(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open p2p engine: %w", err)
 	}
@@ -238,6 +225,7 @@ func OpenP2PFromNodeConfig(cfg *p2pconfig.NodeConfig) (*Store, error) {
 		Repo:      p2pEngine.Repository(),
 		Tracker:   p2pEngine.ChangesetTracker(),
 		P2PEngine: p2pEngine,
+		Engine:    p2pEngine.ReplicationEngine(),
 		Policy:    pol,
 	})
 	if err != nil {

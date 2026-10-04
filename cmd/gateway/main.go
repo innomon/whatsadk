@@ -71,6 +71,20 @@ func main() {
 	}
 
 	var gwStore *store.Store
+	if cfg.P2P.Enabled {
+		gwStore, err = store.OpenP2PFromNodeConfig(cfg.P2P.ToNodeConfig())
+		if err != nil {
+			log.Fatalf("Failed to open P2P gateway store: %v", err)
+		}
+		fmt.Printf("🌐 SQLite P2P Mesh enabled (Node: %s, Topic: %s)\n", cfg.P2P.NodeID, cfg.P2P.SwarmTopic)
+	} else {
+		gwStore, err = store.Open(cfg.Verification.DatabaseURL)
+		if err != nil {
+			log.Fatalf("Failed to open gateway store: %v", err)
+		}
+	}
+	defer gwStore.Close()
+
 	var verifyHandler *verification.Handler
 	if cfg.Verification.Enabled {
 		keyRegistry, err := auth.NewKeyRegistry(cfg.Verification.Apps)
@@ -80,12 +94,6 @@ func main() {
 		if jwtGen == nil {
 			log.Fatalf("Verification requires JWT auth to be enabled (private_key_path must be set) ")
 		}
-
-		gwStore, err = store.Open(cfg.Verification.DatabaseURL)
-		if err != nil {
-			log.Fatalf("Failed to open gateway store: %v", err)
-		}
-		defer gwStore.Close()
 
 		timeout, _ := time.ParseDuration(cfg.Verification.CallbackTimeout)
 		if timeout == 0 {
@@ -101,13 +109,6 @@ func main() {
 			appLogger,
 		)
 		fmt.Printf("🔑 Verification enabled (%d app(s) registered)\n", len(cfg.Verification.Apps))
-	} else {
-		// Initialize store for global blacklist even if verification is disabled
-		gwStore, err = store.Open(cfg.Verification.DatabaseURL)
-		if err != nil {
-			log.Fatalf("Failed to open gateway store: %v", err)
-		}
-		defer gwStore.Close()
 	}
 
 	// Initialize Cron Heartbeats

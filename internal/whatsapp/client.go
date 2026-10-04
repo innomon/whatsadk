@@ -59,12 +59,69 @@ func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client, verif
 				break
 			}
 		}
-		if !strings.HasPrefix(dsn, "file:") && !strings.Contains(dsn, "?") && dsn != ":memory:" {
-			dir := filepath.Dir(dsn)
+		dsn = strings.TrimPrefix(dsn, "file:")
+
+		filePath := dsn
+		var queryParams []string
+		if idx := strings.Index(dsn, "?"); idx != -1 {
+			filePath = dsn[:idx]
+			rawQuery := dsn[idx+1:]
+			for _, param := range strings.Split(rawQuery, "&") {
+				if param == "" {
+					continue
+				}
+				if param == "wal=true" || param == "wal=1" || param == "_journal_mode=WAL" || param == "_pragma=journal_mode(WAL)" {
+					queryParams = append(queryParams, "_pragma=journal_mode(WAL)")
+				} else if strings.HasPrefix(param, "_foreign_keys") || strings.HasPrefix(param, "_fk") {
+					queryParams = append(queryParams, param)
+				} else {
+					queryParams = append(queryParams, param)
+				}
+			}
+		}
+
+		if filePath != ":memory:" && filePath != "" {
+			dir := filepath.Dir(filePath)
 			if dir != "." && dir != "/" && dir != "" {
 				_ = os.MkdirAll(dir, 0755)
 			}
-			dsn = fmt.Sprintf("file:%s?_foreign_keys=on", dsn)
+		}
+
+		hasFK := false
+		hasBusyTimeout := false
+		hasJournal := false
+		hasSynchronous := false
+		for _, q := range queryParams {
+			if strings.Contains(q, "foreign_keys") || strings.Contains(q, "_fk") {
+				hasFK = true
+			}
+			if strings.Contains(q, "busy_timeout") {
+				hasBusyTimeout = true
+			}
+			if strings.Contains(q, "journal_mode") {
+				hasJournal = true
+			}
+			if strings.Contains(q, "synchronous") {
+				hasSynchronous = true
+			}
+		}
+		if !hasFK {
+			queryParams = append(queryParams, "_foreign_keys=on")
+		}
+		if !hasJournal {
+			queryParams = append(queryParams, "_pragma=journal_mode(WAL)")
+		}
+		if !hasBusyTimeout {
+			queryParams = append(queryParams, "_busy_timeout=60000")
+		}
+		if !hasSynchronous {
+			queryParams = append(queryParams, "_pragma=synchronous(NORMAL)")
+		}
+
+		if filePath == ":memory:" || filePath == "" {
+			dsn = "file::memory:?" + strings.Join(queryParams, "&")
+		} else {
+			dsn = fmt.Sprintf("file:%s?%s", filePath, strings.Join(queryParams, "&"))
 		}
 	}
 

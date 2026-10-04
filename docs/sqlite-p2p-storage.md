@@ -63,7 +63,75 @@ p2p:
 
 ---
 
-## 3. Architecture & Dual-Database Roles
+## 3. Network Topologies (LAN, Multi-Host, WAN & VPN)
+
+WhatsADK's P2P storage mesh connects instances across local machines, local networks (LAN), or the public internet (WAN) using pure Go Hyperswarm and Noise XX encryption.
+
+### Topology 1: Same Machine (Multiple WhatsApp Numbers)
+When running multiple gateway instances on the same host (e.g. to serve multiple numbers concurrently), configure distinct TCP swarm ports and connect via localhost:
+
+* **Gateway 1 (`config_num1.yaml`)**:
+  ```yaml
+  p2p:
+    enabled: true
+    node_id: "gateway-node-1"
+    swarm_topic: "whatsadk-mesh-topic"
+    swarm_port: 43211
+    db_path: "data/p2p_num1.db"
+  ```
+* **Gateway 2 (`config_num2.yaml`)**:
+  ```yaml
+  p2p:
+    enabled: true
+    node_id: "gateway-node-2"
+    swarm_topic: "whatsadk-mesh-topic"
+    swarm_port: 43212
+    peer_addrs:
+      - "127.0.0.1:43211"
+    db_path: "data/p2p_num2.db"
+  ```
+
+### Topology 2: Same LAN / Local Wi-Fi (Different Computers)
+When running gateways on separate computers connected to the same local network / router:
+
+* **Zero-Config LAN Auto-Discovery**:
+  Every node automatically broadcasts and listens for UDP discovery beacons on port `49736`. Nodes sharing the same `swarm_topic` detect each other's LAN IP (e.g., `192.168.1.50:43211`) and peer automatically without manual configuration.
+* **Deterministic Direct Address (Recommended for static subnets)**:
+  Point directly to the LAN IP of the target machine:
+  ```yaml
+  p2p:
+    peer_addrs:
+      - "192.168.1.50:43211"
+  ```
+
+### Topology 3: Different Networks / Over the Internet (WAN & Remote Cloud)
+When gateways are located on different networks (e.g., Raspberry Pi at home syncing with a cloud server or office):
+
+#### Option A: Mesh VPN (Tailscale / WireGuard) — Recommended
+Install Tailscale or WireGuard on both machines. They receive private virtual IPs (e.g., `100.x.y.z`). Add the remote peer's mesh IP to `peer_addrs`:
+```yaml
+p2p:
+  peer_addrs:
+    - "100.64.0.15:43211"
+```
+Replication occurs over the private encrypted WireGuard tunnel with zero port forwarding required.
+
+#### Option B: Public DHT Bootstrap Node (`dht-seed`)
+Run a lightweight Hyperswarm rendezvous seed on a public server / VPS:
+```bash
+./dht-seed -port 43210
+```
+Then configure both remote gateways with the public seed address in `bootstrap`:
+```yaml
+p2p:
+  bootstrap:
+    - "203.0.113.10:43210"
+```
+Both gateways register on the DHT topic. Hyperswarm then coordinates NAT hole punching (UDX) to establish a direct, end-to-end encrypted Noise XX session between the two remote machines.
+
+---
+
+## 4. Architecture & Dual-Database Roles
 
 WhatsADK separates protocol-level WhatsApp session persistence from application-level mesh data:
 
@@ -99,7 +167,7 @@ WhatsADK separates protocol-level WhatsApp session persistence from application-
 
 ---
 
-## 4. SQL Compatibility Views
+## 5. SQL Compatibility Views
 
 The backend stores all WhatsApp entities inside a unified, generic key-value table (`crm_store`) and projects them via high-performance SQLite views:
 
@@ -110,7 +178,7 @@ The backend stores all WhatsApp entities inside a unified, generic key-value tab
 
 ---
 
-## 5. Code Example
+## 6. Code Example
 
 ```go
 package main
