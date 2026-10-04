@@ -7,7 +7,7 @@ This directory contains standalone examples demonstrating different ADK Agent in
 ## Example Projects
 
 | Directory | Description | Integration Type |
-|---|---|---|
+| --- | --- | --- |
 | [`hello/`](hello/README.md) | Simple deterministic agent responding to greetings with a capability list. | ADK REST API (`/api/run`) |
 | [`ignore/`](ignore/README.md) | Silent Ignore agent filtering non-whitelisted users without sending WhatsApp responses. | ADK REST API with `application/x-adk-silent-ignore` |
 | [`router/`](router/README.md) | Intelligent router agent with multi-app disambiguation, LLM classification, and in-process execution. | In-Process Runner & HTTP Proxy |
@@ -47,3 +47,11 @@ When configuring WhatsADK, two database storage settings serve distinct purposes
    - Stores virtual file system audit logs (`filesys`), blacklists, contact rosters, and routing state.
    - **Scope:** Replicated across all cluster nodes sharing the same `swarm_topic`.
 
+---
+
+## Multi-Instance Gateway & Backend Agent Topologies
+
+When running multiple gateway instances (serving multiple WhatsApp numbers):
+
+- **Shared Agent:** Multiple gateway instances can point to a single ADK agent endpoint. ADK server isolates conversation state by the sender's phone number (`UserID`).
+- **Dedicated Agents:** Each gateway instance can point to a distinct ADK agent endpoint / port if each WhatsApp number represents a different persona, application, or brand.

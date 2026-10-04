@@ -120,6 +120,26 @@ To serve **two WhatsApp numbers simultaneously** on the same machine using `sqli
 
 Both numbers will forward interactions to the same Ignore Agent backend, while synchronizing audit records and verification state over the local P2P swarm.
 
+### Backend Agent Topologies
+
+You have two architectural options for connecting your multi-number gateways to ADK agents:
+
+#### Option A: Single Shared Agent (Default)
+
+Both gateway instances point their `adk.endpoint` to the same agent (e.g. `http://localhost:8080/api`).
+
+- **How it works:** The ADK server handles requests concurrently and isolates conversation state by the sender's WhatsApp phone number (`UserID`).
+- **Best for:** When both WhatsApp numbers should run the exact same bot behavior (e.g. load-balanced customer support).
+
+#### Option B: Dedicated Agent per WhatsApp Number
+
+Each gateway instance points to its own ADK agent server running on a distinct port or URL.
+
+- **How it works:**
+  - Gateway 1 (`config_num1.yaml`): points to `http://localhost:8080/api` (`app_name: "SupportAgent"`).
+  - Gateway 2 (`config_num2.yaml`): points to `http://localhost:8000/api` (`app_name: "AdminAgent"`).
+- **Best for:** When each WhatsApp number represents a different persona, brand, or specialized assistant.
+
 ---
 
 ## Files
