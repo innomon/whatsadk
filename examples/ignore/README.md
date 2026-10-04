@@ -19,6 +19,7 @@ This example demonstrates a deterministic ADK agent that uses the **Silent Ignor
 ## Database Storage & File Locations
 
 This example uses the embedded `sqlite-p2p` storage backend (`sqlite-p2p://data/whatsadk_p2p.db?wal=true`):
+
 - **Path Resolution:** The database path `data/whatsadk_p2p.db` resolves relative to the current working directory from which the gateway process is started.
   - Running from the repository root creates `./data/whatsadk_p2p.db`.
   - Running from within `examples/ignore/` creates `./examples/ignore/data/whatsadk_p2p.db`.
@@ -29,7 +30,9 @@ This example uses the embedded `sqlite-p2p` storage backend (`sqlite-p2p://data/
 - **Directory Creation:** The `data/` directory is automatically created on startup if absent.
 - **Absolute Paths:** Supply an absolute path (e.g., `sqlite-p2p:///var/data/whatsadk_p2p.db?wal=true`) for a persistent fixed location.
 
-## Setup Instructions
+---
+
+## Setup Instructions (Single WhatsApp Number)
 
 ### 1. Configure the Whitelist
 
@@ -51,7 +54,7 @@ make build
 
 ### 3. Start the Ignore Agent
 
-Navigate to the `examples/ignore` directory and run the agent as a web API server.
+Navigate to the `examples/ignore` directory and run the agent as a web API server:
 
 ```bash
 cd examples/ignore
@@ -74,8 +77,55 @@ In a new terminal, navigate back to the root directory and run the gateway using
 2. Send a message from a **non-whitelisted** number. You will receive NO response, but the gateway terminal will log:
    `Silently ignoring message from {userID}. Reason: User not in whitelist`
 
+---
+
+## Running Two Instances for Two WhatsApp Numbers (Same Machine)
+
+To serve **two WhatsApp numbers simultaneously** on the same machine using `sqlite-p2p`, you run two separate gateway processes with distinct storage files and node IDs while keeping the same `swarm_topic`:
+
+### Requirements & Configuration Rules
+
+| Setting | Instance 1 (`config_num1.yaml`) | Instance 2 (`config_num2.yaml`) | Rule |
+| --- | --- | --- | --- |
+| `whatsapp.store_dsn` | `sqlite-p2p://data/wa_num1.db?wal=true` | `sqlite-p2p://data/wa_num2.db?wal=true` | **Must be distinct** to keep WhatsApp session keys isolated |
+| `verification.database_url` | `sqlite-p2p://data/p2p_num1.db?wal=true` | `sqlite-p2p://data/p2p_num2.db?wal=true` | **Must be distinct** to avoid SQLite file lock conflicts |
+| `p2p.node_id` | `ignore-gateway-node-1` | `ignore-gateway-node-2` | **Must be unique** to prevent Autobase node identity collision |
+| `p2p.swarm_topic` | `whatsadk-mesh-topic` | `whatsadk-mesh-topic` | **Keep same** so both nodes sync audit logs and blacklists via P2P |
+| `p2p.db_path` | `data/p2p_num1.db` | `data/p2p_num2.db` | **Must be distinct** matching verification database path |
+
+### Multi-Instance Launch Steps
+
+1. **Start the single backend Agent** (Terminal 1):
+
+   ```bash
+   cd examples/ignore
+   go run main.go web api
+   ```
+
+2. **Start Gateway Instance 1 for WhatsApp Number 1** (Terminal 2):
+
+   ```bash
+   ./bin/gateway -config examples/ignore/config_num1.yaml
+   ```
+
+   *Scan the terminal QR code with your first phone.*
+
+3. **Start Gateway Instance 2 for WhatsApp Number 2** (Terminal 3):
+
+   ```bash
+   ./bin/gateway -config examples/ignore/config_num2.yaml
+   ```
+
+   *Scan the terminal QR code with your second phone.*
+
+Both numbers will forward interactions to the same Ignore Agent backend, while synchronizing audit records and verification state over the local P2P swarm.
+
+---
+
 ## Files
 
 - `main.go`: The ADK agent implementation with whitelist logic and silent ignore signaling.
 - `whitelist.json`: List of mobile numbers allowed to interact with the agent.
-- `config.yaml`: Configuration for the gateway to connect to this local agent using `sqlite-p2p` backend.
+- `config.yaml`: Default configuration for a single WhatsApp gateway instance.
+- `config_num1.yaml`: Configuration for WhatsApp number 1 in a multi-instance P2P setup.
+- `config_num2.yaml`: Configuration for WhatsApp number 2 in a multi-instance P2P setup.

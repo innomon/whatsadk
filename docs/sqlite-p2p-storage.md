@@ -63,7 +63,43 @@ p2p:
 
 ---
 
-## 3. Architecture & SQL Compatibility Views
+## 3. Architecture & Dual-Database Roles
+
+WhatsADK separates protocol-level WhatsApp session persistence from application-level mesh data:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    WhatsADK Gateway Node                    │
+│                                                             │
+│   ┌──────────────────────┐       ┌──────────────────────┐   │
+│   │   whatsmeow Client   │       │   WhatsADK Store     │   │
+│   │   (WhatsApp Protocol)│       │   (App / Filesys)    │   │
+│   └──────────┬───────────┘       └──────────┬───────────┘   │
+│              │                              │               │
+│              ▼                              ▼               │
+│     [ store_dsn ]                     [ p2p.db_path ]       │
+│   (Local Session DB)              (P2P Replicated Store)    │
+│   - E2EE Signal Keys              - Virtual Filesys Logs    │
+│   - Linked Device Token           - Shared Blacklists       │
+│   - WhatsApp Pre-keys             - Router App Mappings     │
+│   (Isolated per Phone)            - Contacts & Outbox       │
+│                                             │               │
+└─────────────────────────────────────────────┼───────────────┘
+                                              │ Hyperswarm P2P
+                                              ▼ (swarm_topic)
+                                    [ Other Gateway Nodes ]
+```
+
+| Attribute | `whatsapp.store_dsn` | `p2p.db_path` / `verification.database_url` |
+|---|---|---|
+| **Owner / Layer** | [whatsmeow](https://github.com/tulir/whatsmeow) (WhatsApp Protocol Engine) | WhatsADK Gateway (`internal/store`) |
+| **Data Stored** | Cryptographic session keys, Signal protocol identity keys, pre-keys, noise keys, device tokens. | Virtual filesystem logs (`filesys`), blacklists, contacts, command queues, router states. |
+| **Replication Scope** | **Local only** (Private to that specific WhatsApp phone number). | **P2P Swarm Replicated** (Syncs across all nodes sharing the `swarm_topic`). |
+| **Multi-Instance Rule** | **Must be distinct** per phone number to prevent session/key collision. | **Must be distinct file paths** per process on the same machine to prevent file locks. |
+
+---
+
+## 4. SQL Compatibility Views
 
 The backend stores all WhatsApp entities inside a unified, generic key-value table (`crm_store`) and projects them via high-performance SQLite views:
 
@@ -74,7 +110,7 @@ The backend stores all WhatsApp entities inside a unified, generic key-value tab
 
 ---
 
-## 4. Code Example
+## 5. Code Example
 
 ```go
 package main

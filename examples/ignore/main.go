@@ -60,7 +60,7 @@ func main() {
 		AgentLoader: agent.NewSingleLoader(ignoreAgent),
 	}
 
-	fmt.Println("🚀 Ignore Agent is ready.")
+	fmt.Println("🚀 Ignore Agent is ready.\n version: v0.0.1")
 	fmt.Printf("Whitelisted users: %v\n", whitelist)
 	fmt.Println("To run as API server, use: go run main.go web api")
 	fmt.Println("To run as interactive console, use: go run main.go console")

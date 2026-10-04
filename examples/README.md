@@ -30,3 +30,20 @@ All examples are pre-configured to use WhatsADK's pure Go, embedded **`sqlite-p2
   - `whatsadk_p2p.db-shm`: SQLite Shared-Memory index.
 - **Automatic Directory Creation:** Any missing parent directories (such as `data/`) are automatically created at startup.
 - **Absolute Paths:** Supply an absolute path (e.g., `sqlite-p2p:///var/lib/whatsadk/whatsadk_p2p.db?wal=true`) for production or fixed deployments.
+
+---
+
+## Dual-Database Architecture (`store_dsn` vs `p2p.db_path`)
+
+When configuring WhatsADK, two database storage settings serve distinct purposes:
+
+1. **`whatsapp.store_dsn` (WhatsApp Protocol & E2E Encryption):**
+   - Managed by `whatsmeow`.
+   - Stores cryptographic session tokens, Signal double-ratchet keys, and device credentials.
+   - **Scope:** Local and private to that specific WhatsApp phone number. Must be kept in a separate file per phone.
+
+2. **`p2p.db_path` / `verification.database_url` (Gateway Application Store):**
+   - Managed by WhatsADK's embedded `sqlite-p2p` backend.
+   - Stores virtual file system audit logs (`filesys`), blacklists, contact rosters, and routing state.
+   - **Scope:** Replicated across all cluster nodes sharing the same `swarm_topic`.
+

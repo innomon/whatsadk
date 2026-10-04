@@ -1,0 +1,24 @@
+# Configuration for WhatsApp Number 2 (Instance 2)
+whatsapp:
+  store_dsn: "sqlite-p2p://data/wa_num2.db?wal=true"
+  log_level: "INFO"
+
+adk:
+  endpoint: "http://localhost:8080/api"
+  app_name: "IgnoreAgent"
+  streaming: false
+
+# Verification / Gateway Store for Instance 2
+verification:
+  database_url: "sqlite-p2p://data/p2p_num2.db?wal=true"
+
+# SQLite P2P Decentralized Storage & Replication Configuration
+p2p:
+  enabled: true
+  node_id: "ignore-gateway-node-2"
+  swarm_topic: "whatsadk-mesh-topic"
+  db_path: "data/p2p_num2.db"
+  enable_wal: true
+  auto_sync: true
+  replication:
+    mode: "all"
