@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -265,6 +267,12 @@ func openSQLiteP2PBackend(dsn string) (storeBackend, error) {
 	}
 	if dbPath == "" {
 		dbPath = ":memory:"
+	}
+	if dbPath != ":memory:" {
+		dir := filepath.Dir(dbPath)
+		if dir != "." && dir != "/" && dir != "" {
+			_ = os.MkdirAll(dir, 0755)
+		}
 	}
 	return NewBackend(Options{
 		DBPath:    dbPath,

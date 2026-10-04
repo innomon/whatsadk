@@ -8,8 +8,20 @@ This example demonstrates a sophisticated **Router Agent** that acts as a gatewa
 - **In-Process Execution**: Supports running agents in-process using `agentic` configurations for better performance (no network hop).
 - **Remote Routing**: Supports routing to remote agents via HTTP (A2A protocol).
 - **LLM Classifier**: Uses an LLM to help identify which application the user wants to use when the input is ambiguous.
-- **State Management**: Uses a PostgreSQL store to keep track of user-selected applications and session history.
+- **State Management**: Uses the embedded `sqlite-p2p` decentralized store to keep track of user-selected applications and session history.
 - **Automatic Selection**: If only one application is available to a user, it routes directly. If multiple are available, it prompts for selection.
+
+## Database Storage & File Locations
+
+The Router uses the embedded `sqlite-p2p` storage backend configured in `router.yaml`:
+- **Default DSN:** `sqlite-p2p://data/whatsadk_p2p.db?wal=true`
+- **Path Resolution:** Relative paths (`data/whatsadk_p2p.db`) are created relative to the working directory where the router process is executed.
+- **Files Created:**
+  - `whatsadk_p2p.db`: Primary SQLite database file containing filesys logs (`router/<userID>/apps.json`, `router/<userID>/state.json`).
+  - `whatsadk_p2p.db-wal`: Write-Ahead Log for concurrent read/write operations.
+  - `whatsadk_p2p.db-shm`: Shared-Memory index.
+- **Directory Creation:** The `data/` directory is automatically created on startup if absent.
+- **Absolute Paths:** Set `database_url: "sqlite-p2p:///var/data/whatsadk_p2p.db?wal=true"` for fixed absolute path storage.
 
 ## Configuration
 
@@ -19,7 +31,7 @@ The router is configured via `router.yaml`.
 
 ```yaml
 default_app: "ignore"
-pgsql_url: "postgres://user:pass@localhost:5432/whatsadk?sslmode=disable"
+database_url: "sqlite-p2p://data/whatsadk_p2p.db?wal=true"
 
 apps:
   - appName: "admin"
@@ -45,8 +57,8 @@ prompts:
 
 ### App Configuration Types
 
-1.  **Remote Agents**: Defined using `a2aURL`. The router will call these agents over HTTP.
-2.  **In-Process Agents**: Defined using `agenticConfig`. The router will load the agent defined in the provided `agentic` YAML file and execute it in-process using `runner.Runner`.
+1. **Remote Agents**: Defined using `a2aURL`. The router will call these agents over HTTP.
+2. **In-Process Agents**: Defined using `agenticConfig`. The router will load the agent defined in the provided `agentic` YAML file and execute it in-process using `runner.Runner`.
 
 ## Agentic Configuration (`shopper-agentic.yaml`)
 
@@ -71,29 +83,29 @@ agents:
 
 ## How it Works
 
-1.  **Identity**: The router identifies the user via their `UserID`.
-2.  **App Discovery**: It checks the database for a list of apps allowed for that user (`router/<userID>/apps.json`).
-3.  **Routing Logic**:
+1. **Identity**: The router identifies the user via their `UserID`.
+2. **App Discovery**: It checks the database for a list of apps allowed for that user (`router/<userID>/apps.json`).
+3. **Routing Logic**:
     - If a single app is found, it routes directly.
     - If multiple apps are found, it checks `router/<userID>/state.json` to see if a selection is pending.
     - If no selection is pending, it sends a selection menu.
     - Once an app is selected (either by index, title, or LLM classification), the router executes the target app.
-4.  **Execution**:
+4. **Execution**:
     - If the target app has an `agenticConfig`, the router uses an internal `RunnerManager` to execute the agent in the same process.
     - Otherwise, it uses an HTTP client to forward the request to the `a2aURL`.
 
 ## Running the Example
 
-1.  Ensure you have a PostgreSQL database running and update the `pgsql_url` in `router.yaml`.
-2.  Build the example:
+1. Ensure the `sqlite-p2p` store DSN is configured in `router.yaml` (default: `sqlite-p2p://data/whatsadk_p2p.db?wal=true`).
+2. Build the example:
     ```bash
     go build -o router_example main.go
     ```
-3.  Run the router (using the default `router.yaml`):
+3. Run the router (using the default `router.yaml`):
     ```bash
     ./router_example
     ```
-4.  Alternatively, run with a custom configuration file:
+4. Alternatively, run with a custom configuration file:
     ```bash
     ./router_example custom-config.yaml
     ```

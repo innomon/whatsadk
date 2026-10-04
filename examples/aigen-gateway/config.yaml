@@ -2,7 +2,7 @@
 
 whatsapp:
   # Connection string for WhatsApp session storage
-  store_dsn: "postgres://postgres:whatsadk@localhost:5433/whatsadk?sslmode=disable"
+  store_dsn: "sqlite-p2p://data/whatsadk_p2p.db?wal=true"
   log_level: "INFO"
   whitelisted_users: []
 
@@ -26,5 +26,17 @@ auth:
     audience: "aigen-app"
     ttl: "2m"
 
+# Global Blacklist / Verification Store using SQLite P2P backend
 verification:
-  database_url: "postgres://postgres:whatsadk@localhost:5433/whatsadk?sslmode=disable"
+  database_url: "sqlite-p2p://data/whatsadk_p2p.db?wal=true"
+
+# SQLite P2P Decentralized Storage & Replication Configuration
+p2p:
+  enabled: true
+  node_id: "aigen-gateway-node"
+  swarm_topic: "whatsadk-mesh-topic"
+  db_path: "data/whatsadk_p2p.db"
+  enable_wal: true
+  auto_sync: true
+  replication:
+    mode: "all"

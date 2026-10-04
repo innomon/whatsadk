@@ -1,5 +1,6 @@
 default_app: "ignore"
-pgsql_url: "" # e.g. postgres://user:pass@localhost:5432/whatsadk?sslmode=disable
+database_url: "sqlite-p2p://data/whatsadk_p2p.db?wal=true"
+pgsql_url: "sqlite-p2p://data/whatsadk_p2p.db?wal=true" # Backward compatibility fallback
 
 apps:
   - appName: "admin"

@@ -2,8 +2,7 @@
 
 whatsapp:
   # Connection string for WhatsApp session storage
-  # Default uses postgres user with 'whatsadk' password (matches Docker instructions)
-  store_dsn: "postgres://postgres:whatsadk@localhost:5433/whatsadk?sslmode=disable"
+  store_dsn: "sqlite-p2p://data/whatsadk_p2p.db?wal=true"
   log_level: "INFO"
   
 adk:
@@ -14,9 +13,20 @@ adk:
   app_name: "HelloWorkAgent"
   streaming: false
 
-# Global Blacklist / Verification Store
+# Global Blacklist / Verification Store using SQLite P2P backend
 verification:
-  database_url: "postgres://postgres:whatsadk@localhost:5433/whatsadk?sslmode=disable"
+  database_url: "sqlite-p2p://data/whatsadk_p2p.db?wal=true"
+
+# SQLite P2P Decentralized Storage & Replication Configuration
+p2p:
+  enabled: true
+  node_id: "hello-gateway-node"
+  swarm_topic: "whatsadk-hello"
+  db_path: "data/whatsadk_p2p.db"
+  enable_wal: true
+  auto_sync: true
+  replication:
+    mode: "all"
 
 # Auth is optional for local development unless testing JWT
 # auth:

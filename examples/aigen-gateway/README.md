@@ -35,7 +35,20 @@ sequenceDiagram
 
 ---
 
-## 2. Configuration Steps
+## 2. Database Storage & File Locations
+
+This integration uses the embedded `sqlite-p2p` storage engine (`sqlite-p2p://data/whatsadk_p2p.db?wal=true`):
+- **Relative vs. Absolute Resolution:** Paths like `data/whatsadk_p2p.db` resolve relative to the current working directory from which the gateway process is run (e.g. `./data/whatsadk_p2p.db` from repository root).
+- **Files Created:**
+  - `data/whatsadk_p2p.db`: Primary SQLite database file for WhatsApp sessions and verification.
+  - `data/whatsadk_p2p.db-wal`: Write-Ahead Log for concurrent transactions.
+  - `data/whatsadk_p2p.db-shm`: Shared-Memory index.
+- **Directory Creation:** The `data/` directory is automatically created on startup if absent.
+- **P2P Replication:** The `p2p:` block enables decentralized peer discovery and replication over `whatsadk-mesh-topic`.
+
+---
+
+## 3. Configuration Steps
 
 To link the gateway and `aigen-app` securely, you must configure public key cryptography and endpoints on both sides:
 
@@ -58,6 +71,7 @@ Update `examples/aigen-gateway/config.yaml`:
 1. Point `adk.endpoint` to your `aigen-app` URL (e.g. `http://localhost:8080/api/adk2app`).
 2. Set `adk.app_name` to `"RouterAgent"`.
 3. Set `auth.jwt.private_key_path` to the private key path `secrets/jwt_private.pem` generated above.
+4. Verify `whatsapp.store_dsn` and `verification.database_url` point to your `sqlite-p2p` database.
 
 ### Step C: Configure AIGenApp (`aigen-app`)
 Provide the gateway's public key to `aigen-app` to allow validation:
@@ -74,19 +88,19 @@ Provide the gateway's public key to `aigen-app` to allow validation:
 
 ---
 
-## 3. Running the Gateway
+## 4. Running the Gateway
 
 Once configuration is complete, run the WhatsADK Gateway targeting the example config:
 
 ```bash
 # Start WhatsADK pointing to our configuration
-go run cmd/whatsadk/main.go --config examples/aigen-gateway/config.yaml
+./bin/gateway -config examples/aigen-gateway/config.yaml
 ```
 
 ---
 
-## 4. Key Benefits of This Integration
+## 5. Key Benefits of This Integration
 
 - **Security & Authorization**: Rather than bypassing permissions during gateway entry, `aigen-app` performs entry-route RBAC checking. In-process `RouterAgent` execution then performs check filters dynamically so users can only view or execute authorized sub-agents/extensions.
 - **Dynamic Selection (Selection Bypass)**: If a user only has permission to execute a single downstream agent, the selection menu is skipped and they are routed straight to that application seamlessly.
-- **Resource Cleanup**: The virtual file system is kept completely clean. There are no manual `router/<userID>/apps.json` or `router/<userID>/state.json` file reads/writes, resolving concurrency and synchrony issues.
+- **Zero Database Server Setup**: Uses embedded `sqlite-p2p` storage with automatic local directory initialization and optional mesh synchronization.

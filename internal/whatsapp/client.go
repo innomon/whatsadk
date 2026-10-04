@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	_ "github.com/lib/pq"
+	_ "github.com/mattn/go-sqlite3"
 
 	"github.com/innomon/whatsadk/internal/agent"
 	"github.com/innomon/whatsadk/internal/auth"
@@ -46,11 +48,27 @@ func New(ctx context.Context, cfg *config.Config, adkClient *agent.Client, verif
 	log := NewFilteredLogger("whatsmeow")
 
 	dialect := "postgres"
-	if store.IsSurrealDB(cfg.WhatsApp.StoreDSN) {
+	dsn := cfg.WhatsApp.StoreDSN
+	if store.IsSurrealDB(dsn) {
 		dialect = "surrealdb"
+	} else if store.IsSQLiteP2P(dsn) || strings.HasPrefix(dsn, "file:") || strings.HasPrefix(dsn, "sqlite3://") {
+		dialect = "sqlite3"
+		for _, prefix := range []string{"sqlite-p2p://", "sqlite://", "sqlite3://", "p2p://", "pear://"} {
+			if strings.HasPrefix(dsn, prefix) {
+				dsn = strings.TrimPrefix(dsn, prefix)
+				break
+			}
+		}
+		if !strings.HasPrefix(dsn, "file:") && !strings.Contains(dsn, "?") && dsn != ":memory:" {
+			dir := filepath.Dir(dsn)
+			if dir != "." && dir != "/" && dir != "" {
+				_ = os.MkdirAll(dir, 0755)
+			}
+			dsn = fmt.Sprintf("file:%s?_foreign_keys=on", dsn)
+		}
 	}
 
-	container, err := sqlstore.New(ctx, dialect, cfg.WhatsApp.StoreDSN, log)
+	container, err := sqlstore.New(ctx, dialect, dsn, log)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create store: %w", err)
 	}

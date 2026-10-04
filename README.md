@@ -213,11 +213,12 @@ adk api_server
 
 ## Examples
 
-The project includes several examples in the `examples/` directory to help you get started:
+The project includes several examples in the `examples/` directory to help you get started, all pre-configured to use the embedded `sqlite-p2p` storage backend without requiring an external database setup:
 
 - **[Hello Work](examples/hello)**: A simple deterministic agent that responds to "hello" with its capabilities.
-- **[Ignore Agent (Silent Ignore)](examples/ignore)**: Demonstrates the "Silent Ignore" feature. It only responds to users in a `whitelist.json` file and silently ignores all others, recording the reason in the gateway storage.
-- **[Router Agent](examples/router)**: An intelligent routing agent that forwards messages to downstream ADK applications based on user provisioned apps, featuring multi-app disambiguation using an OpenAI classifier and silent ignore.
+- **[Ignore Agent (Silent Ignore)](examples/ignore)**: Demonstrates the "Silent Ignore" feature. It only responds to users in a `whitelist.json` file and silently ignores all others, recording the reason in the gateway's `sqlite-p2p` filesys storage.
+- **[Router Agent](examples/router)**: An intelligent routing agent that forwards messages to downstream ADK applications based on user provisioned apps, featuring multi-app disambiguation using an LLM classifier and `sqlite-p2p` state management.
+- **[AIGenApp Gateway](examples/aigen-gateway)**: Configuration connecting WhatsADK Gateway directly to the AIGenApp agentic runtime with RS256 JWT auth and `sqlite-p2p` storage.
 
 To run an example, follow the instructions in its respective `README.md`.
 

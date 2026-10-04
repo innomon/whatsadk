@@ -32,11 +32,12 @@ import (
 )
 
 type RouterConfig struct {
-	DefaultApp string           `yaml:"default_app"`
-	PgsqlURL   string           `yaml:"pgsql_url"`
-	Apps       []AppConfig      `yaml:"apps"`
-	Classifier ClassifierConfig `yaml:"classifier"`
-	Prompts    PromptsConfig    `yaml:"prompts"`
+	DefaultApp  string           `yaml:"default_app"`
+	DatabaseURL string           `yaml:"database_url"`
+	PgsqlURL    string           `yaml:"pgsql_url"`
+	Apps        []AppConfig      `yaml:"apps"`
+	Classifier  ClassifierConfig `yaml:"classifier"`
+	Prompts     PromptsConfig    `yaml:"prompts"`
 }
 
 type AppConfig struct {
@@ -158,7 +159,14 @@ func main() {
 	}
 
 	var err error
-	dbStore, err = store.Open(cfg.PgsqlURL)
+	dbURL := cfg.DatabaseURL
+	if dbURL == "" {
+		dbURL = cfg.PgsqlURL
+	}
+	if dbURL == "" {
+		dbURL = "sqlite-p2p://data/whatsadk_p2p.db?wal=true"
+	}
+	dbStore, err = store.Open(dbURL)
 	if err != nil {
 		log.Fatalf("failed to open store: %v", err)
 	}
