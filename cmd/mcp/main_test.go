@@ -200,4 +200,43 @@ func TestMCP_ContactsAndMessages(t *testing.T) {
 			t.Fatalf("expected GetDatabaseType result")
 		}
 	})
+
+	t.Run("GetGroups", func(t *testing.T) {
+		res, _, err := GetGroups(ctx, s, GetGroupsArgs{})
+		if err != nil {
+			t.Fatalf("GetGroups failed: %v", err)
+		}
+		if res == nil || len(res.Content) == 0 {
+			t.Fatalf("expected GetGroups result")
+		}
+	})
+
+	t.Run("GetGroupInfo", func(t *testing.T) {
+		res, _, err := GetGroupInfo(ctx, s, GetGroupInfoArgs{JID: "1234567890@g.us"})
+		if err != nil {
+			t.Fatalf("GetGroupInfo failed: %v", err)
+		}
+		if res == nil || len(res.Content) == 0 {
+			t.Fatalf("expected GetGroupInfo result")
+		}
+	})
+
+	t.Run("JIDToPhone", func(t *testing.T) {
+		res, _, err := JIDToPhone(ctx, s, JIDToPhoneArgs{JID: "15551234567:2@s.whatsapp.net"})
+		if err != nil {
+			t.Fatalf("JIDToPhone failed: %v", err)
+		}
+		if res == nil || len(res.Content) == 0 {
+			t.Fatalf("expected JIDToPhone result")
+		}
+
+		// Test group JID
+		groupRes, _, err := JIDToPhone(ctx, s, JIDToPhoneArgs{JID: "12036301234567890@g.us"})
+		if err != nil {
+			t.Fatalf("JIDToPhone for group failed: %v", err)
+		}
+		if groupRes == nil || len(groupRes.Content) == 0 {
+			t.Fatalf("expected JIDToPhone group result")
+		}
+	})
 }

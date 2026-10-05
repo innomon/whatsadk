@@ -303,6 +303,15 @@ func (c *Client) handleCommand(ctx context.Context, cmd store.Command) {
 		}
 	case "get_blocklist":
 		result, err = c.RemoteGetBlocklist()
+	case "get_groups", "get_joined_groups":
+		result, err = c.RemoteGetJoinedGroups()
+	case "get_group_info":
+		var payload struct {
+			JID string `json:"jid"`
+		}
+		if err = json.Unmarshal(cmd.Payload, &payload); err == nil {
+			result, err = c.RemoteGetGroupInfo(payload.JID)
+		}
 	case "send_message":
 		var payload struct {
 			JID         string             `json:"jid"`
@@ -415,6 +424,37 @@ func (c *Client) RemoteGetBlocklist() ([]string, error) {
 		jids[i] = jid.String()
 	}
 	return jids, nil
+}
+
+func (c *Client) RemoteGetJoinedGroups() ([]*types.GroupInfo, error) {
+	if c.wac == nil {
+		return nil, fmt.Errorf("whatsmeow client is not initialized")
+	}
+	groups, err := c.wac.GetJoinedGroups(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("whatsmeow error getting joined groups: %w", err)
+	}
+	return groups, nil
+}
+
+func (c *Client) RemoteGetGroupInfo(jidStr string) (*types.GroupInfo, error) {
+	if c.wac == nil {
+		return nil, fmt.Errorf("whatsmeow client is not initialized")
+	}
+	jid, err := types.ParseJID(jidStr)
+	if err != nil {
+		if !strings.Contains(jidStr, "@") {
+			jid, err = types.ParseJID(jidStr + "@" + types.GroupServer)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("invalid group JID: %w", err)
+		}
+	}
+	groupInfo, err := c.wac.GetGroupInfo(context.Background(), jid)
+	if err != nil {
+		return nil, fmt.Errorf("whatsmeow error getting group info: %w", err)
+	}
+	return groupInfo, nil
 }
 
 func (c *Client) handleEvent(evt interface{}) {

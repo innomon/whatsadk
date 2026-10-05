@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -240,6 +241,180 @@ func BlacklistGetRemote(ctx context.Context, s *store.Store, _ BlacklistGetRemot
 		Content: []mcp.Content{
 			&mcp.TextContent{
 				Text: string(cmd.Result),
+			},
+		},
+	}, nil, nil
+}
+
+// GetGroupsArgs represents arguments for the get_groups MCP tool.
+type GetGroupsArgs struct{}
+
+// GetGroups fetches all joined WhatsApp groups along with their topics, owners, and member/participant lists.
+func GetGroups(ctx context.Context, s *store.Store, _ GetGroupsArgs) (*mcp.CallToolResult, any, error) {
+	cmdID, err := s.EnqueueCommand(ctx, "get_groups", nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to enqueue get_groups: %w", err)
+	}
+
+	cmd, err := s.WaitForCommand(ctx, cmdID, 15*time.Second)
+	if err != nil {
+		return nil, nil, fmt.Errorf("request timed out: %w", err)
+	}
+
+	if cmd.Status == "failed" {
+		return nil, nil, fmt.Errorf("remote request failed: %s", string(cmd.Result))
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: string(cmd.Result),
+			},
+		},
+	}, nil, nil
+}
+
+// GetGroupInfoArgs represents arguments for the get_group_info MCP tool.
+type GetGroupInfoArgs struct {
+	JID string `json:"jid"`
+}
+
+// GetGroupInfo fetches metadata, topic, owner, and participant/member list for a specific WhatsApp group JID.
+func GetGroupInfo(ctx context.Context, s *store.Store, args GetGroupInfoArgs) (*mcp.CallToolResult, any, error) {
+	if args.JID == "" {
+		return nil, nil, fmt.Errorf("jid is required")
+	}
+
+	cmdID, err := s.EnqueueCommand(ctx, "get_group_info", args)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to enqueue get_group_info: %w", err)
+	}
+
+	cmd, err := s.WaitForCommand(ctx, cmdID, 15*time.Second)
+	if err != nil {
+		return nil, nil, fmt.Errorf("request timed out: %w", err)
+	}
+
+	if cmd.Status == "failed" {
+		return nil, nil, fmt.Errorf("remote request failed: %s", string(cmd.Result))
+	}
+
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: string(cmd.Result),
+			},
+		},
+	}, nil, nil
+}
+
+// JIDToPhoneArgs represents arguments for the jid_to_phone MCP tool.
+type JIDToPhoneArgs struct {
+	JID string `json:"jid"`
+}
+
+// JIDToPhoneResult represents the structured response of jid_to_phone.
+type JIDToPhoneResult struct {
+	JID         string `json:"jid"`
+	Phone       string `json:"phone,omitempty"`
+	E164        string `json:"e164,omitempty"`
+	Type        string `json:"type"` // "user", "group", "lid", "newsletter", "unknown"
+	Valid       bool   `json:"valid"`
+	Description string `json:"description,omitempty"`
+}
+
+// JIDToPhone extracts international phone number format and details from a WhatsApp JID.
+func JIDToPhone(ctx context.Context, s *store.Store, args JIDToPhoneArgs) (*mcp.CallToolResult, any, error) {
+	if args.JID == "" {
+		return nil, nil, fmt.Errorf("jid is required")
+	}
+
+	jidStr := strings.TrimSpace(args.JID)
+
+	parts := strings.Split(jidStr, "@")
+	if len(parts) < 2 {
+		raw := strings.TrimPrefix(jidStr, "+")
+		isDigits := true
+		for _, c := range raw {
+			if c < '0' || c > '9' {
+				isDigits = false
+				break
+			}
+		}
+		if isDigits && len(raw) > 0 {
+			res := JIDToPhoneResult{
+				JID:         raw + "@s.whatsapp.net",
+				Phone:       raw,
+				E164:        "+" + raw,
+				Type:        "user",
+				Valid:       true,
+				Description: "Parsed raw phone number string into standard user JID",
+			}
+			data, _ := json.MarshalIndent(res, "", "  ")
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: string(data)}},
+			}, nil, nil
+		}
+		return nil, nil, fmt.Errorf("invalid JID format: missing '@'")
+	}
+
+	userPart := parts[0]
+	serverPart := parts[1]
+
+	userClean := strings.Split(userPart, ":")[0]
+
+	res := JIDToPhoneResult{
+		JID: jidStr,
+	}
+
+	switch serverPart {
+	case "s.whatsapp.net", "c.us":
+		res.Phone = userClean
+		res.E164 = "+" + userClean
+		res.Type = "user"
+		res.Valid = true
+		res.Description = "Standard phone number user JID"
+	case "g.us":
+		res.Type = "group"
+		res.Valid = false
+		res.Description = "JID represents a WhatsApp group chat, not an individual user. Use list_group_members to view group participants."
+	case "lid":
+		contacts, _ := s.ListContacts(ctx, jidStr)
+		if len(contacts) > 0 {
+			for _, c := range contacts {
+				if c.TheirJID != "" && strings.HasSuffix(c.TheirJID, "@s.whatsapp.net") {
+					pnUser := strings.Split(strings.Split(c.TheirJID, "@")[0], ":")[0]
+					res.Phone = pnUser
+					res.E164 = "+" + pnUser
+					res.Type = "user"
+					res.Valid = true
+					res.Description = fmt.Sprintf("Resolved LID to phone number via cached contact (Name: %s)", c.FullName)
+					data, _ := json.MarshalIndent(res, "", "  ")
+					return &mcp.CallToolResult{
+						Content: []mcp.Content{&mcp.TextContent{Text: string(data)}},
+					}, nil, nil
+				}
+			}
+		}
+		res.Type = "lid"
+		res.Valid = false
+		res.Description = "LID (Link ID) privacy-protected user identity. Requires gateway server resolution to obtain phone number."
+	case "newsletter":
+		res.Type = "newsletter"
+		res.Valid = false
+		res.Description = "WhatsApp Channel / Newsletter JID"
+	default:
+		res.Phone = userClean
+		res.Type = "unknown"
+		res.Valid = false
+		res.Description = fmt.Sprintf("Unknown server domain: %s", serverPart)
+	}
+
+	data, _ := json.MarshalIndent(res, "", "  ")
+	return &mcp.CallToolResult{
+		Content: []mcp.Content{
+			&mcp.TextContent{
+				Text: string(data),
 			},
 		},
 	}, nil, nil
@@ -676,6 +851,55 @@ func main() {
 		Description: "Fetch the official blocklist from WhatsApp servers",
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args BlacklistGetRemoteArgs) (*mcp.CallToolResult, any, error) {
 		return BlacklistGetRemote(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_groups",
+		Description: "List all joined WhatsApp groups along with their metadata, topics, owner JIDs, and participant/member lists",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args GetGroupsArgs) (*mcp.CallToolResult, any, error) {
+		return GetGroups(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_groups",
+		Description: "Fetch all joined WhatsApp groups along with their metadata, topics, and full participant/member lists (Alias for list_groups)",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args GetGroupsArgs) (*mcp.CallToolResult, any, error) {
+		return GetGroups(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_joined_groups",
+		Description: "Fetch all joined WhatsApp groups along with their metadata, topics, and full participant/member lists (Alias for list_groups)",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args GetGroupsArgs) (*mcp.CallToolResult, any, error) {
+		return GetGroups(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_group_members",
+		Description: "List all participants/members of a specific WhatsApp group JID, including admin status and owner details",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args GetGroupInfoArgs) (*mcp.CallToolResult, any, error) {
+		return GetGroupInfo(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_group_info",
+		Description: "Fetch metadata, topic, owner, and participant/member list for a specific WhatsApp group JID (Alias for list_group_members)",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args GetGroupInfoArgs) (*mcp.CallToolResult, any, error) {
+		return GetGroupInfo(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "jid_to_phone",
+		Description: "Extract phone number, E.164 international format, and JID details from a WhatsApp JID",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args JIDToPhoneArgs) (*mcp.CallToolResult, any, error) {
+		return JIDToPhone(ctx, s, args)
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "get_phone_from_jid",
+		Description: "Extract phone number, E.164 international format, and JID details from a WhatsApp JID (Alias for jid_to_phone)",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args JIDToPhoneArgs) (*mcp.CallToolResult, any, error) {
+		return JIDToPhone(ctx, s, args)
 	})
 
 	mcp.AddTool(server, &mcp.Tool{

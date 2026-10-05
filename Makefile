@@ -32,6 +32,12 @@ build:
 	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_ADKSIM) ./$(CMD_DIR)/adksim
 	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_DBUTIL) ./$(CMD_DIR)/dbutil
 
+build-cross:
+	@chmod +x scripts/build-cross.sh
+	@./scripts/build-cross.sh
+
+build-all: build build-cross
+
 build-mcp:
 	@mkdir -p $(BIN_DIR)
 	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_MCP) ./$(CMD_DIR)/mcp
@@ -45,3 +51,4 @@ test:
 
 lint:
 	golangci-lint run
+

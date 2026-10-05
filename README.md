@@ -49,21 +49,57 @@ The project provides two separate binaries depending on how you want to connect 
 - **Setup:** Requires a Meta Developer App, Phone Number ID, and a publicly accessible Webhook URL.
 - **Best For:** High-volume enterprise applications, official verified business profiles, and production-grade bots.
 
-## Installation
+## Installation & Cross-Platform Builds
 
 The project uses a `Makefile` to manage builds. All binaries are generated in the `bin/` directory.
 
+### Native Compilation
+
 ```bash
-# Build all binaries (gateway, simulators, etc.)
+# Build all native binaries for current host OS/Arch
 make build
 
 # The binaries will be available in:
 # bin/gateway       (QR Code Mode)
 # bin/waba-gateway  (Official WABA Mode)
 # bin/keygen        (Security tool)
+# bin/whatsadk-mcp  (MCP server)
 # bin/simulator     (WhatsApp TUI simulator)
 # bin/adksim        (ADK Agent TUI simulator)
 # bin/dbutil        (Database export/import tool)
+```
+
+### Cross-Platform Compilation
+
+WhatsADK can be cross-compiled for heterogeneous environments (e.g. running the Gateway on a Raspberry Pi while running the MCP server or agent on a Mac mini M4 or Ubuntu x86_64 server):
+
+```bash
+# Build cross-platform binaries for all supported targets
+make build-cross
+```
+
+#### Supported Target Platforms:
+- **Mac mini M4 / Apple Silicon**: `darwin/arm64` (`_darwin_arm64`)
+- **Raspberry Pi 4 & 5 (Debian Linux)**: `linux/arm64` (`_linux_arm64`)
+- **Ubuntu / Debian x86_64**: `linux/amd64` (`_linux_amd64`)
+
+### Universal Cross-Platform Launcher (`cmd/run.sh`)
+
+The launcher automatically detects the host OS (`uname -s`) and CPU architecture (`uname -m`), resolves the corresponding binary with the appropriate extension, and passes all parameters to the executable:
+
+```bash
+# Syntax: ./cmd/run.sh <command-prefix> [arguments...]
+
+# Launch gateway with auto-detected platform binary:
+./cmd/run.sh gateway -config config.yaml
+
+# Run dbutil database export:
+./cmd/run.sh dbutil export -db data/p2p_num1.db -out dump.jsonl
+
+# Start the MCP server:
+./cmd/run.sh whatsadk-mcp
+# (or using alias)
+./cmd/run.sh mcp
 ```
 
 ## Configuration
@@ -635,6 +671,9 @@ WhatsADK includes an MCP server that allows AI agents (like Claude Code, Cursor,
 - `blacklist_remove`: Unblock a phone number/JID (Local Shadow Ban + Remote WhatsApp Unblock).
 - `blacklist_get_remote`: Fetch the official blocklist from WhatsApp servers.
 - `query_contacts`: Search for WhatsApp contacts by name or JID.
+- `jid_to_phone` (alias `get_phone_from_jid`): Extract phone number and E.164 international format from a WhatsApp user JID.
+- `list_groups` (aliases `get_groups`, `get_joined_groups`): List all joined WhatsApp groups, topics, owners, and complete member lists.
+- `list_group_members` (alias `get_group_info`): List members/participants for a specific group JID, including admin status.
 - `get_message_logs`: Retrieve recent message logs for a specific user.
 - `send_message`: Send multi-modal messages (text/media). Supports `context_type` (enum: `"recommendation"`, `"notification"`, `"advertisement"`, `"system"`, `"response"`) and `msg_ref` (original message ID being replied to) to link the reply.
 - `get_database_type`: Discover the active database type (`postgres`, `surrealdb`, or `sqlite-p2p`).

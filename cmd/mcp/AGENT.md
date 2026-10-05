@@ -187,9 +187,15 @@ Create or update `.pi/mcp.json`:
 ### Contacts & Messaging
 
 - `query_contacts`: Search for WhatsApp contacts by name or JID.
+- `jid_to_phone` (alias `get_phone_from_jid`): Extract international phone number (`E.164` format) and details from a WhatsApp JID (e.g. `15551234567:2@s.whatsapp.net` -> `+15551234567`). Resolves cached LIDs if available.
 - `get_recent_messages`: Retrieve recent message logs globally or for a specific user.
 - `send_message`: Send multi-modal messages (text and/or media). Supports `context_type` (enum: `"recommendation"`, `"notification"`, `"advertisement"`, `"system"`, `"response"`) and `msg_ref` (original request message ID being replied to) to link the reply.
 - `get_database_type`: Discover the active database backend type (`postgres`, `surrealdb`, or `sqlite-p2p`).
+
+### WhatsApp Groups & Members
+
+- `list_groups` (aliases `get_groups`, `get_joined_groups`): List all joined WhatsApp groups along with their subjects/names, topics/descriptions, owner JID, and complete participant/member lists (participant JIDs, admin status, super admin status).
+- `list_group_members` (alias `get_group_info`): List members/participants for a specific WhatsApp group JID (e.g. `12036301234567890@g.us`), including admin and super admin status.
 
 ### Virtual File System (filesys)
 
