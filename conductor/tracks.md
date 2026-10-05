@@ -18,5 +18,5 @@ This file acts as a registry for the development tracks of the WhatsADK project.
 - [x] [waba-gateway](tracks/waba-gateway/plan.md) - Official WABA webhook and client gateway.
 - [x] [whatsapp-auth](tracks/whatsapp-auth/) - SPA WhatsApp-based login using EdDSA JWTs.
 - [x] [whatsapp-blocklist](tracks/whatsapp-blocklist/) - Unified shadow ban and WhatsApp blocklist management.
-- [ ] [tui-mcp-cmd](tracks/tui-mcp-cmd_20261005/) - Interactive Command TUI & MCP UI with SQLite-P2P Swarm.
+- [x] [tui-mcp-cmd](tracks/tui-mcp-cmd_20261005/) - Interactive Command TUI & MCP UI with SQLite-P2P Swarm.
 

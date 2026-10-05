@@ -8,6 +8,7 @@ BINARY_MCP=whatsadk-mcp
 BINARY_SIMULATOR=simulator
 BINARY_ADKSIM=adksim
 BINARY_DBUTIL=dbutil
+BINARY_TUI=tui
 
 # Directories
 BIN_DIR=bin
@@ -31,6 +32,7 @@ build:
 	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_SIMULATOR) ./$(CMD_DIR)/simulator
 	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_ADKSIM) ./$(CMD_DIR)/adksim
 	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_DBUTIL) ./$(CMD_DIR)/dbutil
+	$(GOBUILD) -o $(BIN_DIR)/$(BINARY_TUI) ./$(CMD_DIR)/tui
 
 build-cross:
 	@chmod +x scripts/build-cross.sh

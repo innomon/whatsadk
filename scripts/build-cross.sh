@@ -26,6 +26,7 @@ COMMANDS=(
     "simulator:cmd/simulator"
     "adksim:cmd/adksim"
     "dbutil:cmd/dbutil"
+    "tui:cmd/tui"
 )
 
 echo "=================================================="

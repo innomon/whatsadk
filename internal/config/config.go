@@ -12,18 +12,21 @@ import (
 	"go-pear/pkg/policy"
 	"gopkg.in/yaml.v3"
 	p2pconfig "sqlite-p2p/pkg/config"
+
+	"github.com/innomon/whatsadk/internal/tui/registry"
 )
 
 type Config struct {
-	WhatsApp     WhatsAppConfig     `yaml:"whatsapp"`
-	WABA         WABAConfig         `yaml:"waba"`
-	ADK          ADKConfig          `yaml:"adk"`
-	Auth         AuthConfig         `yaml:"auth"`
-	Verification VerificationConfig `yaml:"verification"`
-	Cron         CronConfig         `yaml:"cron"`
-	SurrealDB    SurrealDBConfig    `yaml:"surrealdb"`
-	P2P          P2PConfig          `yaml:"p2p"`
-	Logging      LoggingConfig      `yaml:"logging"`
+	WhatsApp     WhatsAppConfig         `yaml:"whatsapp"`
+	WABA         WABAConfig             `yaml:"waba"`
+	ADK          ADKConfig              `yaml:"adk"`
+	Auth         AuthConfig             `yaml:"auth"`
+	Verification VerificationConfig     `yaml:"verification"`
+	Cron         CronConfig             `yaml:"cron"`
+	SurrealDB    SurrealDBConfig        `yaml:"surrealdb"`
+	P2P          P2PConfig              `yaml:"p2p"`
+	Logging      LoggingConfig          `yaml:"logging"`
+	Commands     []registry.CommandDef  `yaml:"commands"`
 }
 
 type LoggingConfig struct {
