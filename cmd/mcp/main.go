@@ -617,7 +617,26 @@ func main() {
 	if cfg.P2P.Enabled {
 		s, err = store.OpenP2PFromNodeConfig(cfg.P2P.ToNodeConfig())
 		if err != nil {
-			log.Fatalf("Failed to open P2P store: %v", err)
+			// If full P2P engine cannot bind or feed is locked (e.g. co-located on the same
+			// host as an active gateway holding the swarm port or hypercore feed lock),
+			// fall back to direct local SQLite P2P storage in WAL mode.
+			dbPath := cfg.P2P.DBPath
+			if dbPath == "" {
+				dbPath = cfg.Verification.DatabaseURL
+			}
+			if dbPath == "" {
+				dbPath = cfg.WhatsApp.StoreDSN
+			}
+			var directErr error
+			if dbPath != "" {
+				s, directErr = store.Open(dbPath)
+			}
+			if directErr != nil || s == nil {
+				log.Fatalf("Failed to open P2P store (mesh: %v, direct fallback: %v)", err, directErr)
+			}
+			log.Printf("MCP running in direct local SQLite P2P mode (co-located with active gateway)")
+		} else {
+			log.Printf("MCP SQLite P2P mesh enabled (Node: %s, Topic: %s)", cfg.P2P.NodeID, cfg.P2P.SwarmTopic)
 		}
 	} else {
 		dbURL := cfg.Verification.DatabaseURL

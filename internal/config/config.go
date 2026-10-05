@@ -373,6 +373,9 @@ func (c *Config) applyDefaults() {
 	if c.P2P.Replication.Mode == "" {
 		c.P2P.Replication.Mode = "all"
 	}
+	if c.P2P.SwarmTopic == "" {
+		c.P2P.SwarmTopic = "whatsadk-mesh-topic"
+	}
 }
 
 func (c *Config) IsUserWhitelisted(userID string) bool {
@@ -515,5 +518,29 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if v := os.Getenv("P2P_REPLICATION_MODE"); v != "" {
 		c.P2P.Replication.Mode = v
+	}
+	if v := os.Getenv("P2P_BOOTSTRAP"); v != "" {
+		parts := strings.Split(v, ",")
+		var addrs []string
+		for _, p := range parts {
+			if s := strings.TrimSpace(p); s != "" {
+				addrs = append(addrs, s)
+			}
+		}
+		if len(addrs) > 0 {
+			c.P2P.Bootstrap = addrs
+		}
+	}
+	if v := os.Getenv("P2P_PEER_ADDRS"); v != "" {
+		parts := strings.Split(v, ",")
+		var addrs []string
+		for _, p := range parts {
+			if s := strings.TrimSpace(p); s != "" {
+				addrs = append(addrs, s)
+			}
+		}
+		if len(addrs) > 0 {
+			c.P2P.PeerAddrs = addrs
+		}
 	}
 }

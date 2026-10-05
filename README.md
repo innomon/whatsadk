@@ -627,7 +627,7 @@ docker exec -i whatsadk-surreal surreal sql --endpoint http://localhost:8000 --n
 
 ## Model Context Protocol (MCP)
 
-WhatsADK includes an MCP server that allows AI agents (like Claude Code, Cursor, and OpenCode) to interact with your WhatsApp contacts and blacklist directly. See [cmd/mcp/AGENT.md](cmd/mcp/AGENT.md) for detailed configuration and installation guides for different agents.
+WhatsADK includes an MCP server that allows AI agents (like Claude Code, Cursor, OpenCode, and Gemini CLI) to interact with your WhatsApp contacts and blacklist directly. The MCP server supports decentralized **SQLite-P2P synchronization**, allowing the AI agent and MCP server to run on a separate host (e.g. developer laptop or cloud container) while replicating seamlessly with a remote WhatsApp gateway. See [cmd/mcp/AGENT.md](cmd/mcp/AGENT.md) for detailed configuration, remote deployment, and installation guides.
 
 ### Tools Available
 
@@ -637,7 +637,7 @@ WhatsADK includes an MCP server that allows AI agents (like Claude Code, Cursor,
 - `query_contacts`: Search for WhatsApp contacts by name or JID.
 - `get_message_logs`: Retrieve recent message logs for a specific user.
 - `send_message`: Send multi-modal messages (text/media). Supports `context_type` (enum: `"recommendation"`, `"notification"`, `"advertisement"`, `"system"`, `"response"`) and `msg_ref` (original message ID being replied to) to link the reply.
-- `get_database_type`: Discover the active database type (postgres or surrealdb).
+- `get_database_type`: Discover the active database type (`postgres`, `surrealdb`, or `sqlite-p2p`).
 - `filesys_sql_select`: Execute custom SELECT queries on message logs.
 - `filesys_put`: Create or update entries in the virtual file system.
 - `filesys_get`: Retrieve specific entries by path.
@@ -646,7 +646,7 @@ WhatsADK includes an MCP server that allows AI agents (like Claude Code, Cursor,
 
 ### Configuration for Claude Code / Claude Desktop
 
-Add the following to your `claude_desktop_config.json` or equivalent:
+Add the following to your `claude_desktop_config.json` or equivalent (using SQLite-P2P to sync with a remote Gateway):
 
 ```json
 {
@@ -654,7 +654,11 @@ Add the following to your `claude_desktop_config.json` or equivalent:
     "whatsadk": {
       "command": "/path/to/whatsadk/bin/whatsadk-mcp",
       "env": {
-        "CONFIG_FILE": "/path/to/whatsadk/config/config.yaml"
+        "P2P_ENABLED": "true",
+        "P2P_NODE_ID": "mcp-claude-client",
+        "P2P_SWARM_TOPIC": "whatsadk-mesh-topic",
+        "P2P_PEER_ADDRS": "192.168.1.100:4001",
+        "P2P_DB_PATH": "data/mcp_p2p.db"
       }
     }
   }

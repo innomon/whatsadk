@@ -16,31 +16,105 @@ This will create the `whatsadk-mcp` binary in the `bin/` directory.
 
 ### 2. Configuration
 
-The MCP server requires access to the same database as the main Gateway. Ensure your `config.yaml` is correctly configured with your storage backend:
-- **PostgreSQL**: `whatsapp.store_dsn` or `verification.database_url` (e.g. `postgres://localhost:5432/whatsadk?sslmode=disable`)
-- **SurrealDB**: `surrealdb` configuration block (or `surrealdb://` DSN)
-- **SQLite-P2P**: `p2p` configuration block or `sqlite-p2p://` / `sqlite://` / `p2p://` / `pear://` DSN with optional replication gating
+The MCP server connects to the WhatsADK database or joins the decentralized SQLite-P2P mesh:
+
+- **SQLite-P2P (Decentralized Mesh)**: Recommended when the MCP server runs on a separate machine from the gateway, or in a decentralized cluster. Configure `p2p.enabled: true` with a local database file and peer addresses pointing to the gateway.
+- **PostgreSQL**: `whatsapp.store_dsn` or `verification.database_url` (e.g. `postgres://localhost:5432/whatsadk?sslmode=disable`).
+- **SurrealDB**: `surrealdb` configuration block (or `surrealdb://` DSN).
+
+## 🌐 Remote Machine Deployment & P2P Synchronization
+
+In many production or development setups, the **WhatsADK Gateway** runs on a dedicated server or Raspberry Pi (holding the WhatsApp Web session), while the **MCP Server** runs on a developer laptop, a separate workstation, or an AI agent container (Claude Desktop, Gemini CLI, or Pi).
+
+With `sqlite-p2p`, the MCP server runs as an independent peer node in the mesh:
+
+```
+┌──────────────────────────────────────┐          ┌──────────────────────────────────────┐
+│       WhatsADK Gateway Host          │          │        AI Agent / MCP Host           │
+│  (e.g., Raspberry Pi / Server)       │          │  (e.g., Laptop / Claude / Gemini)    │
+│                                      │          │                                      │
+│  ┌────────────────────────────────┐  │  P2P Mesh│  ┌────────────────────────────────┐  │
+│  │ whatsmeow Gateway Session      │  │  Changes │  │ AI Agent (Claude, Gemini, etc.)│  │
+│  └───────────────▲────────────────┘  │  Replic. │  └───────────────▲────────────────┘  │
+│                  │ Polls commands    │  ◄═════► │                  │ MCP stdio tools   │
+│  ┌───────────────▼────────────────┐  │  (Port   │  ┌───────────────▼────────────────┐  │
+│  │ SQLite-P2P DB: p2p_gateway.db  │  │   4001)  │  │ SQLite-P2P DB: mcp_p2p.db      │  │
+│  │ Node: "gateway-node-1"         │  │          │  │ Node: "mcp-agent-node"         │  │
+│  └────────────────────────────────┘  │          │  └────────────────────────────────┘  │
+└──────────────────────────────────────┘          └──────────────────────────────────────┘
+```
+
+### How Synchronization Works
+
+1. **Local Embedded Database**: The remote MCP server maintains its own local SQLite database (e.g. `data/mcp_p2p.db`), guaranteeing zero network latency for reads (`get_recent_messages`, `query_contacts`, `filesys_get`).
+2. **Peer Discovery & Connectivity**:
+   - **Same Local Network (LAN)**: If the Gateway and MCP machine are on the same WiFi/Ethernet network, `sqlite-p2p` auto-discovers the Gateway via UDP multicast beacon without requiring manual IP configuration.
+   - **Different Networks / Remote WAN**: Specify the gateway's IP or hostname in `p2p.peer_addrs` (or via `P2P_PEER_ADDRS`), e.g. `["192.168.1.100:4001"]` or `["gateway.internal:4001"]`. The MCP server dials the Gateway directly and establishes an encrypted connection.
+3. **Command Queue Propagation (`send_message`, `blacklist_add`, `blacklist_remove`)**:
+   - When the agent calls `send_message`, MCP enqueues the command in its local `whatsmeow_commands` table with status `pending`.
+   - The P2P replication engine transmits the changeset to the remote Gateway.
+   - The Gateway executes the command on WhatsApp and writes status `completed` (or `failed`) with the delivery result.
+   - The status changeset replicates back to the MCP server.
+   - MCP's `WaitForCommand` detects the completion and returns confirmation to the AI agent.
+4. **Co-located (Same-Machine) Fallback**:
+   - If the MCP server runs on the **same machine** as the Gateway, `whatsadk-mcp` automatically detects if the P2P swarm port (4001) or hypercore feed is locked by the active gateway, and transparently falls back to direct SQLite WAL mode, allowing safe concurrent database access without conflicts.
+
+### Remote MCP Configuration (`config/mcp_remote.yaml`)
+
+```yaml
+p2p:
+  enabled: true
+  node_id: "mcp-agent-client"
+  swarm_topic: "whatsadk-mesh-topic"  # Must match the Gateway's topic
+  swarm_port: 0                       # 0 = bind to any available local port
+  db_path: "data/mcp_p2p.db"          # Local database for this MCP node
+  enable_wal: true
+  auto_sync: true
+  peer_addrs:
+    - "192.168.1.100:4001"             # IP/hostname and SwarmPort of the Gateway
+  replication:
+    mode: "all"
+```
 
 ## 🚀 How to Run (Manual)
 
-The MCP server uses `stdio` transport. You can test it manually (though it's designed for machine interaction):
+The MCP server communicates over standard input/output (`stdio` transport):
 
 ```bash
-./bin/whatsadk-mcp -config ./config/config.yaml
+./bin/whatsadk-mcp -config /config/mcp_remote.yaml
 ```
 
 ## 🤖 Integration with AI Agents
 
 ### Gemini CLI
 
-Add the server to your Gemini CLI configuration:
+Add the server to your Gemini CLI configuration (`~/.gemini/settings.json`):
 
 ```json
 {
   "mcpServers": {
     "whatsadk": {
-      "command": "/absolute/path/to/whatsadk/bin/whatsadk-mcp",
-      "args": ["-config", "/absolute/path/to/whatsadk/config/config.yaml"]
+      "command": "/path/to/whatsadk/bin/whatsadk-mcp",
+      "args": ["-config", "/path/to/whatsadk/config/mcp_remote.yaml"]
+    }
+  }
+}
+```
+
+Or configure via environment variables directly:
+
+```json
+{
+  "mcpServers": {
+    "whatsadk": {
+      "command": "/path/to/whatsadk/bin/whatsadk-mcp",
+      "env": {
+        "P2P_ENABLED": "true",
+        "P2P_NODE_ID": "mcp-gemini-client",
+        "P2P_SWARM_TOPIC": "whatsadk-mesh-topic",
+        "P2P_PEER_ADDRS": "192.168.1.100:4001",
+        "P2P_DB_PATH": "data/mcp_p2p.db"
+      }
     }
   }
 }
@@ -54,9 +128,13 @@ Update your `claude_desktop_config.json`:
 {
   "mcpServers": {
     "whatsadk": {
-      "command": "/absolute/path/to/whatsadk/bin/whatsadk-mcp",
+      "command": "/path/to/whatsadk/bin/whatsadk-mcp",
       "env": {
-        "CONFIG_FILE": "/absolute/path/to/whatsadk/config/config.yaml"
+        "P2P_ENABLED": "true",
+        "P2P_NODE_ID": "mcp-claude-client",
+        "P2P_SWARM_TOPIC": "whatsadk-mesh-topic",
+        "P2P_PEER_ADDRS": "192.168.1.100:4001",
+        "P2P_DB_PATH": "data/mcp_p2p.db"
       }
     }
   }
@@ -65,15 +143,19 @@ Update your `claude_desktop_config.json`:
 
 ### pi.dev (Pi Coding Agent)
 
-Create or update `.pi/mcp.json` in your project root:
+Create or update `.pi/mcp.json`:
 
 ```json
 {
   "mcpServers": {
     "whatsadk": {
-      "command": "/absolute/path/to/whatsadk/bin/whatsadk-mcp",
+      "command": "/path/to/whatsadk/bin/whatsadk-mcp",
       "env": {
-        "CONFIG_FILE": "/absolute/path/to/whatsadk/config/config.yaml"
+        "P2P_ENABLED": "true",
+        "P2P_NODE_ID": "mcp-pi-client",
+        "P2P_SWARM_TOPIC": "whatsadk-mesh-topic",
+        "P2P_PEER_ADDRS": "192.168.1.100:4001",
+        "P2P_DB_PATH": "data/mcp_p2p.db"
       },
       "lifecycle": "lazy"
     }
@@ -83,14 +165,12 @@ Create or update `.pi/mcp.json` in your project root:
 
 ### OpenCode / Block Goose
 
-Add the following to your MCP configuration file (usually `mcp.json` or `config.json` in the tool's config directory):
-
 ```json
 {
   "mcpServers": {
     "whatsadk": {
-      "command": "/absolute/path/to/whatsadk/bin/whatsadk-mcp",
-      "args": ["-config", "/absolute/path/to/whatsadk/config/config.yaml"]
+      "command": "/path/to/whatsadk/bin/whatsadk-mcp",
+      "args": ["-config", "/path/to/whatsadk/config/mcp_remote.yaml"]
     }
   }
 }
@@ -293,6 +373,7 @@ In PostgreSQL, `metadata` is stored as a native `JSONB` column. In SurrealDB, it
 When running with `sqlite-p2p` backend, the MCP server accesses an embedded, pure Go decentralized store that can replicate across nodes via Autobase and Hyperswarm.
 
 Replication access is gated using cryptographic public keys (`[32]byte` hex strings) in three modes configured under `p2p.replication` in `config.yaml`:
+
 - `all`: Unrestricted peer synchronization.
 - `whitelist`: Replicate only with authorized peer public keys.
 - `blacklist`: Block unauthorized peer public keys.
