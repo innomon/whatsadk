@@ -47,10 +47,17 @@ type sqlStore struct {
 }
 
 func IsSQLiteP2P(dsn string) bool {
-	return strings.HasPrefix(dsn, "sqlite-p2p://") ||
+	if strings.HasPrefix(dsn, "sqlite-p2p://") ||
 		strings.HasPrefix(dsn, "sqlite://") ||
 		strings.HasPrefix(dsn, "p2p://") ||
-		strings.HasPrefix(dsn, "pear://")
+		strings.HasPrefix(dsn, "pear://") {
+		return true
+	}
+	clean := strings.Split(dsn, "?")[0]
+	return strings.HasSuffix(clean, ".db") ||
+		strings.HasSuffix(clean, ".sqlite") ||
+		strings.HasSuffix(clean, ".sqlite3") ||
+		clean == ":memory:"
 }
 
 func openSQLiteP2P(dsn string) (storeBackend, error) {

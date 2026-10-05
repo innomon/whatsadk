@@ -761,7 +761,7 @@ The exported JSON can then be loaded into the simulator using `/replay` to repro
 
 The `dbutil` command-line utility provides database-agnostic import/export capabilities using the standard **JSON Lines (JSONL)** format. This format is fully streaming-friendly (ideal for large message databases) and translates binary assets (like files in the filesys database) into portable Base64 encoded JSON objects.
 
-This tool allows seamless database migrations (e.g., migrating from PostgreSQL to SurrealDB or vice-versa) and general backups/restores.
+This tool allows seamless database migrations (e.g., migrating between PostgreSQL, SurrealDB, and SQLite-P2P) and general backups/restores. For detailed documentation, CLI options, and schema references, see [cmd/dbutil/README.md](cmd/dbutil/README.md).
 
 #### Build
 
@@ -777,27 +777,39 @@ go build -o bin/dbutil ./cmd/dbutil
 # Export the database contents to a JSONL file (defaults to export.jsonl)
 ./bin/dbutil export -out backup.jsonl
 
+# Export directly from a local SQLite-P2P database file without config.yaml:
+./bin/dbutil export -db data/p2p_num1.db -out backup.jsonl
+
+# Export using a direct database DSN (sqlite://, postgres://, surrealdb://):
+./bin/dbutil export -dsn sqlite://data/p2p_num1.db -out backup.jsonl
+
 # Export to stdout (useful for piping or redirecting)
 ./bin/dbutil export -out - > backup.jsonl
 
 # Import database contents from a JSONL file (defaults to export.jsonl)
 ./bin/dbutil import -in backup.jsonl
 
+# Import directly into a local SQLite-P2P database file:
+./bin/dbutil import -db data/p2p_num2.db -in backup.jsonl
+
 # Import from stdin
 cat backup.jsonl | ./bin/dbutil import -in -
 
-# Specify a custom config file path
+# Specify a custom config file path (supports P2P and traditional backends)
 ./bin/dbutil -config my-config.yaml export -out backup.jsonl
+./bin/dbutil export -config my-config.yaml -out backup.jsonl
 ```
 
 #### Supported Tables/Entities
 
-The utility exports and restores the following tables across both PostgreSQL and SurrealDB backends:
+The utility exports and restores the following tables across PostgreSQL, SurrealDB, and SQLite-P2P backends:
 
 1. `blacklisted_numbers` (Blocked phones/contacts)
 2. `whatsmeow_contacts` (Synched WhatsApp contacts)
 3. `whatsmeow_commands` (Outbound agent command queue)
 4. `filesys` (Gateway request/response logs and downloaded media files)
+
+For full documentation, entity schemas, and advanced migration guides, see [cmd/dbutil/README.md](cmd/dbutil/README.md).
 
 ## Architecture
 

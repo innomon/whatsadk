@@ -15,6 +15,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/innomon/whatsadk/internal/config"
@@ -26,6 +27,45 @@ type Command interface {
 	Name() string
 	Description() string
 	Run(ctx context.Context, s *store.Store, args []string) error
+}
+
+// CommandRegistry manages available dbutil commands.
+type CommandRegistry struct {
+	commands map[string]Command
+	order    []string
+}
+
+// NewCommandRegistry creates a registry initialized with default dbutil subcommands.
+func NewCommandRegistry() *CommandRegistry {
+	r := &CommandRegistry{
+		commands: make(map[string]Command),
+	}
+	r.Register(&exportCmd{})
+	r.Register(&importCmd{})
+	return r
+}
+
+// Register registers a subcommand with the registry.
+func (r *CommandRegistry) Register(cmd Command) {
+	r.commands[cmd.Name()] = cmd
+	r.order = append(r.order, cmd.Name())
+}
+
+// Get retrieves a command by its name.
+func (r *CommandRegistry) Get(name string) (Command, bool) {
+	cmd, ok := r.commands[name]
+	return cmd, ok
+}
+
+// Commands returns all registered commands in registration order.
+func (r *CommandRegistry) Commands() []Command {
+	var list []Command
+	for _, name := range r.order {
+		if cmd, ok := r.commands[name]; ok {
+			list = append(list, cmd)
+		}
+	}
+	return list
 }
 
 // exportCmd implements the export subcommand.
@@ -335,59 +375,160 @@ func (c *importCmd) Run(ctx context.Context, s *store.Store, args []string) erro
 	return nil
 }
 
-// main is the entry point for the dbutil CLI tool.
-func main() {
-	if len(os.Args) < 2 {
-		printUsage()
-		os.Exit(1)
-	}
+// parsedCLI stores the parsed command-line arguments.
+type parsedCLI struct {
+	commandName string
+	configFile  string
+	dbPath      string
+	dsn         string
+	subArgs     []string
+	showHelp    bool
+}
 
-	cmdName := os.Args[1]
-	var cmd Command
-	switch cmdName {
-	case "export":
-		cmd = &exportCmd{}
-	case "import":
-		cmd = &importCmd{}
-	default:
-		fmt.Printf("Error: unknown command %q\n", cmdName)
-		printUsage()
-		os.Exit(1)
-	}
-
-	// Filter os.Args temporarily so config.Load() (which calls flag.Parse())
-	// only parses the -config flag if it exists, ignoring subcommand-specific flags.
-	origArgs := os.Args
-	var filteredArgs []string
-	filteredArgs = append(filteredArgs, origArgs[0])
-	for i := 1; i < len(origArgs); i++ {
-		if origArgs[i] == "-config" {
-			if i+1 < len(origArgs) {
-				filteredArgs = append(filteredArgs, "-config", origArgs[i+1])
+// parseCLIArgs extracts global options and separates the subcommand and its arguments.
+func parseCLIArgs(args []string) *parsedCLI {
+	p := &parsedCLI{}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "-h" || arg == "--help" || arg == "-help" || arg == "help" {
+			if p.commandName == "" {
+				p.showHelp = true
+				return p
+			}
+			p.subArgs = append(p.subArgs, "-help")
+			continue
+		}
+		if arg == "-config" || arg == "--config" {
+			if i+1 < len(args) {
+				p.configFile = args[i+1]
 				i++
 			}
+			continue
 		}
+		if strings.HasPrefix(arg, "-config=") || strings.HasPrefix(arg, "--config=") {
+			parts := strings.SplitN(arg, "=", 2)
+			p.configFile = parts[1]
+			continue
+		}
+		if arg == "-db" || arg == "--db" {
+			if i+1 < len(args) {
+				p.dbPath = args[i+1]
+				i++
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "-db=") || strings.HasPrefix(arg, "--db=") {
+			parts := strings.SplitN(arg, "=", 2)
+			p.dbPath = parts[1]
+			continue
+		}
+		if arg == "-dsn" || arg == "--dsn" {
+			if i+1 < len(args) {
+				p.dsn = args[i+1]
+				i++
+			}
+			continue
+		}
+		if strings.HasPrefix(arg, "-dsn=") || strings.HasPrefix(arg, "--dsn=") {
+			parts := strings.SplitN(arg, "=", 2)
+			p.dsn = parts[1]
+			continue
+		}
+		if !strings.HasPrefix(arg, "-") && p.commandName == "" {
+			p.commandName = arg
+			continue
+		}
+		p.subArgs = append(p.subArgs, arg)
 	}
-	os.Args = filteredArgs
+	return p
+}
+
+// openDatabase opens the database store based on CLI arguments or loaded configuration.
+func openDatabase(cli *parsedCLI) (*store.Store, error) {
+	if cli.dbPath != "" {
+		return store.Open(cli.dbPath)
+	}
+	if cli.dsn != "" {
+		return store.Open(cli.dsn)
+	}
+
+	if cli.configFile != "" {
+		os.Setenv("CONFIG_FILE", cli.configFile)
+	}
 
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		return nil, fmt.Errorf("load config: %w", err)
 	}
 
-	// Restore original os.Args
-	os.Args = origArgs
+	if cfg.P2P.Enabled {
+		nodeCfg := cfg.P2P.ToNodeConfig()
+		s, err := store.OpenP2PFromNodeConfig(nodeCfg)
+		if err == nil {
+			fmt.Printf("🌐 SQLite P2P Mesh enabled (Node: %s, Topic: %s)\n", cfg.P2P.NodeID, cfg.P2P.SwarmTopic)
+			return s, nil
+		}
+		// If full P2P mesh cannot start (e.g. swarm port in use by active gateway or hypercore feed locked),
+		// fall back to direct local SQLite P2P storage in WAL mode.
+		dbPath := cfg.P2P.DBPath
+		if dbPath == "" {
+			dbPath = cfg.Verification.DatabaseURL
+		}
+		if dbPath == "" {
+			dbPath = cfg.WhatsApp.StoreDSN
+		}
+		if dbPath != "" {
+			s, openErr := store.Open(dbPath)
+			if openErr == nil {
+				fmt.Println("ℹ️  Opened SQLite P2P database in local direct mode (concurrent with active gateway)")
+				return s, nil
+			}
+		}
+		return nil, fmt.Errorf("open p2p store: %w", err)
+	}
 
-	// Open the database store using the configured DatabaseURL
-	s, err := store.Open(cfg.Verification.DatabaseURL)
+	dbURL := cfg.Verification.DatabaseURL
+	if dbURL == "" {
+		dbURL = cfg.WhatsApp.StoreDSN
+	}
+	return store.Open(dbURL)
+}
+
+// main is the entry point for the dbutil CLI tool.
+func main() {
+	cli := parseCLIArgs(os.Args[1:])
+	if cli.showHelp || cli.commandName == "" {
+		printUsage()
+		if cli.commandName == "" && !cli.showHelp {
+			os.Exit(1)
+		}
+		return
+	}
+
+	registry := NewCommandRegistry()
+	cmd, ok := registry.Get(cli.commandName)
+	if !ok {
+		fmt.Printf("Error: unknown command %q\n", cli.commandName)
+		printUsage()
+		os.Exit(1)
+	}
+
+	// If subcommand help is requested, run subcommand directly without opening the database.
+	for _, a := range cli.subArgs {
+		if a == "-h" || a == "-help" || a == "--help" {
+			_ = cmd.Run(context.Background(), nil, cli.subArgs)
+			return
+		}
+	}
+
+	s, err := openDatabase(cli)
 	if err != nil {
 		log.Fatalf("Failed to open database store: %v", err)
 	}
 	defer s.Close()
 
 	ctx := context.Background()
-	// Run the subcommand with its arguments (excluding program name and subcommand name)
-	if err := cmd.Run(ctx, s, os.Args[2:]); err != nil {
+	if err := cmd.Run(ctx, s, cli.subArgs); err != nil {
 		log.Fatalf("Command failed: %v", err)
 	}
 
@@ -396,9 +537,19 @@ func main() {
 
 // printUsage outputs usage instructions for the dbutil CLI tool.
 func printUsage() {
-	fmt.Println("Usage: dbutil <command> [options]")
+	fmt.Println("Usage: dbutil [options] <command> [command options]")
+	fmt.Println("")
 	fmt.Println("Commands:")
-	fmt.Println("  export   Export database contents to a JSONL file")
-	fmt.Println("  import   Import database contents from a JSONL file")
-	fmt.Println("Use 'dbutil <command> -help' for command options.")
+	registry := NewCommandRegistry()
+	for _, cmd := range registry.Commands() {
+		fmt.Printf("  %-8s %s\n", cmd.Name(), cmd.Description())
+	}
+	fmt.Println("")
+	fmt.Println("Options:")
+	fmt.Println("  -config <path>   Path to config.yaml (default: auto-detected)")
+	fmt.Println("  -db <path>       Direct path to SQLite database file")
+	fmt.Println("  -dsn <url>       Database connection DSN (sqlite://, postgres://, surrealdb://)")
+	fmt.Println("  -help, -h        Show help")
+	fmt.Println("")
+	fmt.Println("Use 'dbutil <command> -help' for command-specific options.")
 }
