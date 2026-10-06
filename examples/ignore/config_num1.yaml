@@ -22,3 +22,13 @@ p2p:
   auto_sync: true
   replication:
     mode: "all"
+
+logging:
+  level: "INFO"
+  console_enabled: true
+  file_enabled: true
+  dir: "logs"
+  file_name: "ignore_num1.log"
+  max_size_mb: 10
+  max_backups: 5
+
