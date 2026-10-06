@@ -24,12 +24,14 @@ An interactive, multi-format (Plain text, Markdown, A2UI) terminal user interfac
 ## 🛠 Usage
 
 ### Build
+
 ```bash
 make build
 # Binary created at bin/tui
 ```
 
 ### Run
+
 ```bash
 ./cmd/run.sh tui -config config.yaml
 # Or directly:

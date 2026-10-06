@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/innomon/whatsadk/internal/config"
@@ -50,11 +51,16 @@ type AppModel struct {
 	promptValues  map[string]string
 	promptIdx     int
 
+	// Command History Navigation
+	cmdHistory []string
+	historyIdx int
+	draftInput string
+
 	// Output History & Layout
-	history  []OutputEntry
-	width    int
-	height   int
-	p2pInfo  string
+	history []OutputEntry
+	width   int
+	height  int
+	p2pInfo string
 
 	// Styling
 	styles Styles
@@ -122,6 +128,8 @@ func NewAppModel(cfg *config.Config, s *store.Store) *AppModel {
 	reg := registry.NewRegistry()
 	handlers.RegisterAllHandlers(reg)
 
+	styles := DefaultStyles()
+
 	// Combine default commands with config commands
 	cmdList := handlers.DefaultCommands()
 	if cfg != nil && len(cfg.Commands) > 0 {
@@ -135,16 +143,20 @@ func NewAppModel(cfg *config.Config, s *store.Store) *AppModel {
 
 	ti := textinput.New()
 	ti.Placeholder = "Type a command (e.g. sql query=\"SELECT * FROM filesys\", or '/' for slash modal)..."
+	ti.Prompt = "> "
+	ti.PromptStyle = styles.InputPrompt
 	ti.Focus()
 	ti.CharLimit = 512
 	ti.Width = 80
 
 	mi := textinput.New()
 	mi.Placeholder = "Enter parameter value..."
+	mi.Prompt = "> "
+	mi.PromptStyle = styles.InputPrompt
 	mi.Width = 50
 
 	vp := viewport.New(80, 20)
-	vp.SetContent("Welcome to WhatsADK Interactive Command & MCP TUI!\nType 'help' or press '/' to open the slash command modal.\n")
+	vp.SetContent(renderMarkdown("### Welcome to WhatsADK Interactive Command & MCP TUI!\nType `help` or press `/` to open the slash command modal.\n", 80))
 
 	p2pStr := "Local Store"
 	if cfg != nil && cfg.P2P.Enabled {
@@ -162,8 +174,10 @@ func NewAppModel(cfg *config.Config, s *store.Store) *AppModel {
 		input:        ti,
 		modalInput:   mi,
 		promptValues: make(map[string]string),
+		cmdHistory:   make([]string, 0),
+		historyIdx:   0,
 		p2pInfo:      p2pStr,
-		styles:       DefaultStyles(),
+		styles:       styles,
 	}
 }
 
@@ -194,6 +208,32 @@ func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch m.state {
 		case StateNormal:
+			switch msg.String() {
+			case "up":
+				if len(m.cmdHistory) > 0 {
+					if m.historyIdx == len(m.cmdHistory) {
+						m.draftInput = m.input.Value()
+					}
+					if m.historyIdx > 0 {
+						m.historyIdx--
+						m.input.SetValue(m.cmdHistory[m.historyIdx])
+						m.input.CursorEnd()
+					}
+				}
+				return m, nil
+			case "down":
+				if m.historyIdx < len(m.cmdHistory) {
+					m.historyIdx++
+					if m.historyIdx == len(m.cmdHistory) {
+						m.input.SetValue(m.draftInput)
+					} else {
+						m.input.SetValue(m.cmdHistory[m.historyIdx])
+					}
+					m.input.CursorEnd()
+				}
+				return m, nil
+			}
+
 			if msg.Type == tea.KeyEnter {
 				line := m.input.Value()
 				m.input.SetValue("")
@@ -269,6 +309,15 @@ func (m *AppModel) openSlashModal(initialText string) {
 }
 
 func (m *AppModel) executeLine(line string) {
+	lineTrim := strings.TrimSpace(line)
+	if lineTrim != "" {
+		if len(m.cmdHistory) == 0 || m.cmdHistory[len(m.cmdHistory)-1] != lineTrim {
+			m.cmdHistory = append(m.cmdHistory, lineTrim)
+		}
+		m.historyIdx = len(m.cmdHistory)
+		m.draftInput = ""
+	}
+
 	cmdName, rawArgs := registry.ParseLine(line)
 	if cmdName == "" {
 		return
@@ -349,13 +398,32 @@ func (m *AppModel) renderHelp() {
 			for _, p := range c.Params {
 				valStr := ""
 				if p.Value != "" {
-					valStr = fmt.Sprintf(" (default: %s)", p.Value)
+					valStr = fmt.Sprintf(" (default: `%s`)", p.Value)
 				}
-				sb.WriteString(fmt.Sprintf("   - `%s` (%s)%s: %s\n", p.Name, p.Type, valStr, p.Help))
+				sb.WriteString(fmt.Sprintf("   - `%s` (`%s`)%s: %s\n", p.Name, p.Type, valStr, p.Help))
 			}
 		}
 	}
 	m.addOutput("help", registry.Result{Type: registry.ResultTypeMarkdown, Content: sb.String()}, nil)
+}
+
+func renderMarkdown(content string, width int) string {
+	w := width - 6
+	if w <= 0 {
+		w = 80
+	}
+	r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(w),
+	)
+	if err != nil {
+		return content
+	}
+	out, err := r.Render(content)
+	if err != nil {
+		return content
+	}
+	return strings.TrimSpace(out)
 }
 
 func (m *AppModel) addOutput(cmd string, res registry.Result, err error) {
@@ -375,7 +443,8 @@ func (m *AppModel) addOutput(cmd string, res registry.Result, err error) {
 
 		switch entry.Result.Type {
 		case registry.ResultTypeMarkdown:
-			sb.WriteString(m.styles.ResultMarkdown.Render(entry.Result.Content) + "\n\n")
+			rendered := renderMarkdown(entry.Result.Content, m.width)
+			sb.WriteString(rendered + "\n\n")
 		case registry.ResultTypeA2UI:
 			sb.WriteString(m.styles.ResultA2UI.Render("A2UI Component:\n"+entry.Result.Content) + "\n\n")
 		default:
@@ -393,12 +462,11 @@ func (m *AppModel) View() string {
 
 	var mainView string
 	if m.state == StateNormal {
-		inputView := fmt.Sprintf("%s %s", m.styles.InputPrompt.Render(">"), m.input.View())
 		mainView = lipgloss.JoinVertical(
 			lipgloss.Left,
 			header,
 			m.styles.Viewport.Render(m.viewport.View()),
-			inputView,
+			m.input.View(),
 			statusBar,
 		)
 	} else {
