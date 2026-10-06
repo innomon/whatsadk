@@ -9,7 +9,7 @@ WhatsADK includes a native, decentralized, pure Go storage backend powered by `s
 You can enable the SQLite P2P storage backend by configuring your `WHATSADK_STORE_DSN` or passing a compatible DSN to `store.Open(dsn)`:
 
 | Scheme | Description | Example |
-|---|---|---|
+| --- | --- | --- |
 | `sqlite-p2p://` | Canonical SQLite P2P DSN | `sqlite-p2p://whatsadk.db?wal=true` |
 | `sqlite://` | Standard SQLite path | `sqlite://data/whatsadk.db` |
 | `p2p://` | P2P swarm connection | `p2p://cluster.db` |
@@ -68,9 +68,11 @@ p2p:
 WhatsADK's P2P storage mesh connects instances across local machines, local networks (LAN), or the public internet (WAN) using pure Go Hyperswarm and Noise XX encryption.
 
 ### Topology 1: Same Machine (Multiple WhatsApp Numbers)
+
 When running multiple gateway instances on the same host (e.g. to serve multiple numbers concurrently), configure distinct TCP swarm ports and connect via localhost:
 
-* **Gateway 1 (`config_num1.yaml`)**:
+- **Gateway 1 (`config_num1.yaml`)**:
+
   ```yaml
   p2p:
     enabled: true
@@ -79,7 +81,9 @@ When running multiple gateway instances on the same host (e.g. to serve multiple
     swarm_port: 43211
     db_path: "data/p2p_num1.db"
   ```
+
 * **Gateway 2 (`config_num2.yaml`)**:
+
   ```yaml
   p2p:
     enabled: true
@@ -92,12 +96,14 @@ When running multiple gateway instances on the same host (e.g. to serve multiple
   ```
 
 ### Topology 2: Same LAN / Local Wi-Fi (Different Computers)
+
 When running gateways on separate computers connected to the same local network / router:
 
-* **Zero-Config LAN Auto-Discovery**:
+- **Zero-Config LAN Auto-Discovery**:
   Every node automatically broadcasts and listens for UDP discovery beacons on port `49736`. Nodes sharing the same `swarm_topic` detect each other's LAN IP (e.g., `192.168.1.50:43211`) and peer automatically without manual configuration.
-* **Deterministic Direct Address (Recommended for static subnets)**:
+- **Deterministic Direct Address (Recommended for static subnets)**:
   Point directly to the LAN IP of the target machine:
+
   ```yaml
   p2p:
     peer_addrs:
@@ -105,28 +111,37 @@ When running gateways on separate computers connected to the same local network 
   ```
 
 ### Topology 3: Different Networks / Over the Internet (WAN & Remote Cloud)
+
 When gateways are located on different networks (e.g., Raspberry Pi at home syncing with a cloud server or office):
 
 #### Option A: Mesh VPN (Tailscale / WireGuard) — Recommended
+
 Install Tailscale or WireGuard on both machines. They receive private virtual IPs (e.g., `100.x.y.z`). Add the remote peer's mesh IP to `peer_addrs`:
+
 ```yaml
 p2p:
   peer_addrs:
     - "100.64.0.15:43211"
 ```
+
 Replication occurs over the private encrypted WireGuard tunnel with zero port forwarding required.
 
 #### Option B: Public DHT Bootstrap Node (`dht-seed`)
+
 Run a lightweight Hyperswarm rendezvous seed on a public server / VPS:
+
 ```bash
 ./dht-seed -port 43210
 ```
+
 Then configure both remote gateways with the public seed address in `bootstrap`:
+
 ```yaml
 p2p:
   bootstrap:
     - "203.0.113.10:43210"
 ```
+
 Both gateways register on the DHT topic. Hyperswarm then coordinates NAT hole punching (UDX) to establish a direct, end-to-end encrypted Noise XX session between the two remote machines.
 
 ---
@@ -159,7 +174,7 @@ WhatsADK separates protocol-level WhatsApp session persistence from application-
 ```
 
 | Attribute | `whatsapp.store_dsn` | `p2p.db_path` / `verification.database_url` |
-|---|---|---|
+| --- | --- | --- |
 | **Owner / Layer** | [whatsmeow](https://github.com/tulir/whatsmeow) (WhatsApp Protocol Engine) | WhatsADK Gateway (`internal/store`) |
 | **Data Stored** | Cryptographic session keys, Signal protocol identity keys, pre-keys, noise keys, device tokens. | Virtual filesystem logs (`filesys`), blacklists, contacts, command queues, router states. |
 | **Replication Scope** | **Local only** (Private to that specific WhatsApp phone number). | **P2P Swarm Replicated** (Syncs across all nodes sharing the `swarm_topic`). |
@@ -184,37 +199,37 @@ The backend stores all WhatsApp entities inside a unified, generic key-value tab
 package main
 
 import (
-	"context"
-	"log"
+ "context"
+ "log"
 
-	"github.com/innomon/whatsadk/internal/config"
-	"github.com/innomon/whatsadk/internal/store"
+ "github.com/innomon/whatsadk/internal/config"
+ "github.com/innomon/whatsadk/internal/store"
 )
 
 func main() {
-	ctx := context.Background()
+ ctx := context.Background()
 
-	// Load configuration with P2P gating
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatalf("failed to load config: %v", err)
-	}
+ // Load configuration with P2P gating
+ cfg, err := config.Load()
+ if err != nil {
+  log.Fatalf("failed to load config: %v", err)
+ }
 
-	// Open store with P2P node configuration and replication policy
-	st, err := store.OpenP2PFromNodeConfig(cfg.P2P.ToNodeConfig())
-	if err != nil {
-		log.Fatalf("failed to open store: %v", err)
-	}
-	defer st.Close()
+ // Open store with P2P node configuration and replication policy
+ st, err := store.OpenP2PFromNodeConfig(cfg.P2P.ToNodeConfig())
+ if err != nil {
+  log.Fatalf("failed to open store: %v", err)
+ }
+ defer st.Close()
 
-	// Enqueue asynchronous WhatsApp command
-	cmdID, err := st.EnqueueCommand(ctx, "send_message", map[string]string{
-		"phone": "+15551234567",
-		"text":  "Hello from WhatsaDK SQLite P2P!",
-	})
-	if err != nil {
-		log.Fatalf("failed to enqueue command: %v", err)
-	}
-	log.Printf("Enqueued command ID: %d", cmdID)
+ // Enqueue asynchronous WhatsApp command
+ cmdID, err := st.EnqueueCommand(ctx, "send_message", map[string]string{
+  "phone": "+15551234567",
+  "text":  "Hello from WhatsaDK SQLite P2P!",
+ })
+ if err != nil {
+  log.Fatalf("failed to enqueue command: %v", err)
+ }
+ log.Printf("Enqueued command ID: %d", cmdID)
 }
 ```
