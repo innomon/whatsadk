@@ -75,6 +75,7 @@ type Options struct {
 
 // Backend implements StoreBackend using SQLite unified crm_store and Autobase replication.
 type Backend struct {
+	dbPath    string
 	db        *sql.DB
 	ownsDB    bool
 	repo      *p2p.Repository
@@ -128,6 +129,7 @@ func NewBackend(opts Options) (*Backend, error) {
 	}
 
 	backend := &Backend{
+		dbPath:    opts.DBPath,
 		db:        db,
 		ownsDB:    ownsDB,
 		repo:      repo,
@@ -145,6 +147,13 @@ func NewBackend(opts Options) (*Backend, error) {
 	}
 
 	return backend, nil
+}
+
+// DBPath returns the database file path used by this backend.
+func (b *Backend) DBPath() string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.dbPath
 }
 
 // DB returns the underlying sql.DB instance.
@@ -221,6 +230,7 @@ func OpenP2PFromNodeConfig(cfg *p2pconfig.NodeConfig) (*Store, error) {
 	}
 
 	backend, err := NewBackend(Options{
+		DBPath:    cfg.DBPath,
 		DB:        p2pEngine.DB(),
 		Repo:      p2pEngine.Repository(),
 		Tracker:   p2pEngine.ChangesetTracker(),

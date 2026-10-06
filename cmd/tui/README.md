@@ -18,8 +18,10 @@ An interactive, multi-format (Plain text, Markdown, A2UI) terminal user interfac
   - **Plain Text:** Status messages and raw logs.
   - **Markdown:** Formatted output with headers, tables, and code blocks.
   - **A2UI:** Structured Agent-to-User Interface component boxes.
-- **SQLite-P2P Swarm Integration:**
-  - Reads `p2p` configuration from `config.yaml`, joins the specified P2P swarm topic, and displays real-time mesh connection status in the status bar.
+- **SQLite-P2P Swarm & Direct WAL Mode Integration:**
+  - Auto-discovers co-located gateway databases (`p2p_num1.db`, `p2p_num2.db`, `whatsadk_p2p.db`) when running alongside active WhatsADK instances.
+  - Falls back gracefully to direct SQLite WAL mode when local swarm port or feed locks are active, allowing concurrent reading, querying, and command enqueueing.
+  - Automatic background UI refresh ticks keep the status bar updated with the active database file path, P2P sync state, and active peer count.
 
 ## 🛠 Usage
 

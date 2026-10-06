@@ -67,7 +67,7 @@ make build
 # bin/simulator     (WhatsApp TUI simulator)
 # bin/adksim        (ADK Agent TUI simulator)
 # bin/dbutil        (Database export/import tool)
-# bin/tui           (Interactive Command & MCP TUI shell)
+# bin/tui           (Interactive Command & MCP TUI shell with SQLite P2P auto-discovery)
 ```
 
 ### Cross-Platform Compilation

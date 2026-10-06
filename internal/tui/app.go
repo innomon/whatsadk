@@ -3,7 +3,9 @@ package tui
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -57,13 +59,62 @@ type AppModel struct {
 	draftInput string
 
 	// Output History & Layout
-	history []OutputEntry
-	width   int
-	height  int
-	p2pInfo string
+	history  []OutputEntry
+	width    int
+	height   int
+	p2pInfo  string
+	activeDB string
+	p2pState string
 
 	// Styling
 	styles Styles
+}
+
+type TickMsg time.Time
+
+func tickCmd() tea.Cmd {
+	return tea.Every(2*time.Second, func(t time.Time) tea.Msg {
+		return TickMsg(t)
+	})
+}
+
+func (m *AppModel) SetActiveDB(path string) {
+	m.activeDB = path
+	m.updateStatusBarInfo()
+}
+
+func (m *AppModel) SetP2PState(state string) {
+	m.p2pState = state
+	m.updateStatusBarInfo()
+}
+
+func (m *AppModel) updateStatusBarInfo() {
+	dbName := "Offline/Memory"
+	if m.store != nil {
+		if path := m.store.DBPath(); path != "" {
+			dbName = filepath.Base(path)
+		} else if m.activeDB != "" {
+			dbName = filepath.Base(m.activeDB)
+		}
+	} else if m.activeDB != "" {
+		dbName = filepath.Base(m.activeDB)
+	}
+
+	peerCount := 0
+	if m.store != nil {
+		peerCount = m.store.PeerCount()
+	}
+
+	p2pSync := "Offline Mode"
+	if m.p2pState != "" {
+		p2pSync = m.p2pState
+	} else if m.cfg != nil && m.cfg.P2P.Enabled {
+		p2pSync = fmt.Sprintf("P2P Swarm Node: %s (Topic: %s)", m.cfg.P2P.NodeID, m.cfg.P2P.SwarmTopic)
+	} else if m.store != nil {
+		p2pSync = "Local SQLite Store"
+	}
+
+	m.p2pInfo = fmt.Sprintf("DB: %s | %s | Peers: %d", dbName, p2pSync, peerCount)
 }
 
 // Styles holds Lip Gloss style definitions.
@@ -158,12 +209,7 @@ func NewAppModel(cfg *config.Config, s *store.Store) *AppModel {
 	vp := viewport.New(80, 20)
 	vp.SetContent(renderMarkdown("### Welcome to WhatsADK Interactive Command & MCP TUI!\nType `help` or press `/` to open the slash command modal.\n", 80))
 
-	p2pStr := "Local Store"
-	if cfg != nil && cfg.P2P.Enabled {
-		p2pStr = fmt.Sprintf("P2P Swarm Node: %s | Topic: %s", cfg.P2P.NodeID, cfg.P2P.SwarmTopic)
-	}
-
-	return &AppModel{
+	m := &AppModel{
 		cfg:          cfg,
 		store:        s,
 		registry:     reg,
@@ -176,19 +222,24 @@ func NewAppModel(cfg *config.Config, s *store.Store) *AppModel {
 		promptValues: make(map[string]string),
 		cmdHistory:   make([]string, 0),
 		historyIdx:   0,
-		p2pInfo:      p2pStr,
 		styles:       styles,
 	}
+	m.updateStatusBarInfo()
+	return m
 }
 
 func (m *AppModel) Init() tea.Cmd {
-	return textinput.Blink
+	return tea.Batch(textinput.Blink, tickCmd())
 }
 
 func (m *AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
 	switch msg := msg.(type) {
+	case TickMsg:
+		m.updateStatusBarInfo()
+		return m, tickCmd()
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":

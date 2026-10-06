@@ -114,6 +114,9 @@ func (s *Store) Close() error {
 
 // Policy returns the replication gating policy if backed by SQLite P2P.
 func (s *Store) Policy() *policy.ReplicationPolicy {
+	if s == nil || s.backend == nil {
+		return nil
+	}
 	if pb, ok := s.backend.(*Backend); ok {
 		return pb.Policy()
 	}
@@ -122,9 +125,38 @@ func (s *Store) Policy() *policy.ReplicationPolicy {
 
 // SetPolicy updates the replication gating policy if backed by SQLite P2P.
 func (s *Store) SetPolicy(p *policy.ReplicationPolicy) {
+	if s == nil || s.backend == nil {
+		return
+	}
 	if pb, ok := s.backend.(*Backend); ok {
 		pb.SetPolicy(p)
 	}
+}
+
+// DBPath returns the active database path if backed by SQLite P2P.
+func (s *Store) DBPath() string {
+	if s == nil || s.backend == nil {
+		return ""
+	}
+	if pb, ok := s.backend.(*Backend); ok {
+		return pb.DBPath()
+	}
+	return ""
+}
+
+// PeerCount returns active P2P peer connection count if backed by SQLite P2P engine.
+func (s *Store) PeerCount() int {
+	if s == nil || s.backend == nil {
+		return 0
+	}
+	if pb, ok := s.backend.(*Backend); ok {
+		if eng := pb.Engine(); eng != nil {
+			if swarm := eng.Swarm(); swarm != nil {
+				return swarm.PeerCount()
+			}
+		}
+	}
+	return 0
 }
 
 func (s *sqlStore) Close() error {
