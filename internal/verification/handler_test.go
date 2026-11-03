@@ -387,6 +387,13 @@ func TestHMAC_TokenParsingAndFreshness(t *testing.T) {
 		t.Errorf("expected VerifyHMAC to return false for wrong secret")
 	}
 
+	// 3b. VerifyHMAC with truncated 32-char (16-byte) HMAC
+	truncated := *parsed
+	truncated.Signature = sig[:32]
+	if !VerifyHMAC(&truncated, secret) {
+		t.Errorf("expected VerifyHMAC to accept truncated 32-character hex HMAC signature")
+	}
+
 	// 4. Tampered signature
 	tampered := *parsed
 	tampered.Signature = "0000000000000000000000000000000000000000000000000000000000000000"

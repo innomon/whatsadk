@@ -79,6 +79,7 @@ func ComputeHMAC(appID, token string, timestamp int64, secret string) string {
 }
 
 // VerifyHMAC verifies that token's signature matches HMAC-SHA256(appID:token:timestamp) with secret using constant-time comparison.
+// It supports both compact truncated HMAC (16 bytes / 32 hex chars) and full HMAC (32 bytes / 64 hex chars).
 func VerifyHMAC(token *HMACToken, secret string) bool {
 	if token == nil || secret == "" {
 		return false
@@ -92,7 +93,14 @@ func VerifyHMAC(token *HMACToken, secret string) bool {
 		return false
 	}
 
-	return hmac.Equal(actualSigBytes, expectedSigBytes)
+	if len(actualSigBytes) == 16 && len(expectedSigBytes) >= 16 {
+		return hmac.Equal(actualSigBytes, expectedSigBytes[:16])
+	}
+	if len(actualSigBytes) == 32 && len(expectedSigBytes) == 32 {
+		return hmac.Equal(actualSigBytes, expectedSigBytes)
+	}
+
+	return false
 }
 
 // CheckTimestampFreshness verifies that |now - tokenTimestamp| <= ttl.

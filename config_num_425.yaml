@@ -19,7 +19,7 @@ verification:
     kb:
       name: "kheti-badi"
       auth_type: "hmac"
-      secret: "${KHETI_BADI_HMAC_SECRET}"
+      secret: "kheti-badi-dev-secret-change-in-production-20261022T19:16"
       webhook_url: "http://localhost:5001/api/auth/whatsapp/webhook"
       ttl: "5m"
       success_message: "✅ Verified successfully! Please return to Kheti-Badi."
