@@ -1,0 +1,41 @@
+# Configuration for WhatsApp Number  8130162425
+whatsapp:
+  store_dsn: "sqlite-p2p://data/wa_num_425.db?wal=true"
+  log_level: "INFO"
+
+adk:
+  endpoint: "http://localhost:8080/api"
+  app_name: "IgnoreAgent"
+  streaming: false
+
+# Verification / Gateway Store for Instance 425
+verification:
+  enabled: true
+  database_url: "sqlite-p2p://data/p2p_num_425.db?wal=true"
+  rate_limit:
+    max_attempts: 5
+    window: "1m"
+  apps:
+    kb:
+      name: "kheti-badi"
+      auth_type: "hmac"
+      secret: "${KHETI_BADI_HMAC_SECRET}"
+      webhook_url: "http://localhost:5001/api/auth/whatsapp/webhook"
+      ttl: "5m"
+      success_message: "✅ Verified successfully! Please return to Kheti-Badi."
+
+# SQLite P2P Decentralized Storage & Replication Configuration
+p2p:
+  enabled: true
+  node_id: "ignore-gateway-node-425"
+  swarm_topic: "whatsadk-mesh-topic"
+  swarm_port: 43211
+  db_path: "data/p2p_num_425.db"
+  enable_wal: true
+  auto_sync: true
+  replication:
+    mode: "all"
+
+logging:
+  dir: "logs"
+  file_name: "gateway-425.log"

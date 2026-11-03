@@ -21,7 +21,7 @@
 - **WhatsApp Web Protocol:** `whatsmeow` (`go.mau.fi/whatsmeow`)
 - **ADK / Agent Integration:** `google.golang.org/adk/v2`, `a2aproject/a2a-go`, `google.golang.org/genai`
 - **MCP Server Protocol:** `github.com/modelcontextprotocol/go-sdk`
-- **Auth & Cryptography:** RS256 JWT (`golang-jwt/jwt/v5`), Ed25519/EdDSA WhatsApp OAuth, `go-pear` access control
+- **Auth & Cryptography:** RS256 JWT (`golang-jwt/jwt/v5`), Ed25519/EdDSA WhatsApp OAuth, Multi-Tenant HMAC SHA-256 verification, `go-pear` access control
 
 ## CLI & Command Registry
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/innomon/whatsadk/internal/config"
 	"github.com/innomon/whatsadk/internal/tui"
+	"gopkg.in/yaml.v3"
 )
 
 func TestDiscoverDatabasePath(t *testing.T) {
@@ -51,5 +52,38 @@ func TestAppModelStatusUpdate(t *testing.T) {
 	view := model.View()
 	if view == "" {
 		t.Errorf("expected non-empty model view")
+	}
+}
+
+func TestStagingConfigTUI(t *testing.T) {
+	path := "/home/innomon/staging/whatsadk/config_tui.yaml"
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", path, err)
+	}
+
+	var cfg config.Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		t.Fatalf("failed to unmarshal YAML from %s: %v", path, err)
+	}
+
+	if !cfg.P2P.Enabled {
+		t.Errorf("expected P2P.Enabled to be true")
+	}
+	if cfg.P2P.NodeID != "tui-node-1" {
+		t.Errorf("expected NodeID 'tui-node-1', got %q", cfg.P2P.NodeID)
+	}
+	if cfg.P2P.SwarmTopic != "whatsadk-mesh-topic" {
+		t.Errorf("expected SwarmTopic 'whatsadk-mesh-topic', got %q", cfg.P2P.SwarmTopic)
+	}
+	if cfg.P2P.DBPath != "data/tui_p2p.db" {
+		t.Errorf("expected DBPath 'data/tui_p2p.db', got %q", cfg.P2P.DBPath)
+	}
+	if len(cfg.Commands) != 1 {
+		t.Fatalf("expected 1 command definition, got %d", len(cfg.Commands))
+	}
+	cmd := cfg.Commands[0]
+	if cmd.Name != "sql" || cmd.Handler != "sql_exec" {
+		t.Errorf("unexpected command definition: %+v", cmd)
 	}
 }

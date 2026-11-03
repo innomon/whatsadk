@@ -24,6 +24,8 @@ bin/
 # WhatsApp Session/Store (if using sqlite)
 *.db
 *.session
+data/
+logs/
 
 # Configuration
 .env

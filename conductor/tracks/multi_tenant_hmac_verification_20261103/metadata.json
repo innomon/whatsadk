@@ -1,0 +1,8 @@
+{
+  "track_id": "multi_tenant_hmac_verification_20261103",
+  "type": "feature",
+  "status": "new",
+  "created_at": "2026-11-03T19:48:00+05:30",
+  "updated_at": "2026-11-03T19:48:00+05:30",
+  "description": "Multi-Tenant App Verification Routing with HMAC Validation & Rate Limiting (Approach B)"
+}

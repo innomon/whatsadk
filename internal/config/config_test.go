@@ -196,3 +196,69 @@ func TestP2PConfig_EnvOverrides(t *testing.T) {
 		t.Errorf("expected Replication.Mode 'whitelist', got %q", cfg.P2P.Replication.Mode)
 	}
 }
+
+func TestVerificationConfig_MultiTenantHMAC(t *testing.T) {
+	os.Setenv("TEST_APP_SECRET", "super-secret-key-123")
+	defer os.Unsetenv("TEST_APP_SECRET")
+
+	rawYAML := `
+verification:
+  enabled: true
+  rate_limit:
+    max_attempts: 10
+    window: "2m"
+  apps:
+    kb:
+      name: "kheti-badi"
+      auth_type: "hmac"
+      secret: "${TEST_APP_SECRET}"
+      webhook_url: "http://localhost:5001/api/auth/whatsapp/webhook"
+      ttl: "5m"
+      success_message: "✅ Verified successfully! Please return to Kheti-Badi."
+    legacy_app:
+      public_key_path: "secrets/legacy.pem"
+`
+
+	var cfg Config
+	err := yaml.Unmarshal([]byte(rawYAML), &cfg)
+	if err != nil {
+		t.Fatalf("failed to unmarshal yaml: %v", err)
+	}
+	cfg.applyDefaults()
+
+	if !cfg.Verification.Enabled {
+		t.Errorf("expected Verification.Enabled = true")
+	}
+	if cfg.Verification.RateLimit.GetMaxAttempts() != 10 {
+		t.Errorf("expected RateLimit.MaxAttempts = 10, got %d", cfg.Verification.RateLimit.GetMaxAttempts())
+	}
+	if cfg.Verification.RateLimit.GetWindow().Minutes() != 2 {
+		t.Errorf("expected RateLimit.Window = 2m, got %v", cfg.Verification.RateLimit.GetWindow())
+	}
+
+	kbApp, ok := cfg.Verification.Apps["kb"]
+	if !ok {
+		t.Fatalf("expected 'kb' app to be present")
+	}
+	if !kbApp.IsHMAC() {
+		t.Errorf("expected kb app to be HMAC")
+	}
+	if kbApp.GetSecret() != "super-secret-key-123" {
+		t.Errorf("expected resolved secret 'super-secret-key-123', got %q", kbApp.GetSecret())
+	}
+	if kbApp.GetTTL().Minutes() != 5 {
+		t.Errorf("expected TTL 5m, got %v", kbApp.GetTTL())
+	}
+	if kbApp.WebhookURL != "http://localhost:5001/api/auth/whatsapp/webhook" {
+		t.Errorf("expected webhook url, got %q", kbApp.WebhookURL)
+	}
+
+	legacyApp, ok := cfg.Verification.Apps["legacy_app"]
+	if !ok {
+		t.Fatalf("expected 'legacy_app' to be present")
+	}
+	if legacyApp.IsHMAC() {
+		t.Errorf("expected legacy_app to be RSA, not HMAC")
+	}
+}
+

@@ -5,12 +5,15 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -344,4 +347,185 @@ func writeAppPubKey(t *testing.T, key *rsa.PrivateKey) string {
 		t.Fatalf("failed to write public key: %v", err)
 	}
 	return path
+}
+
+func TestHMAC_TokenParsingAndFreshness(t *testing.T) {
+	appID := "kb"
+	token := "0123456789abcdef0123456789abcdef"
+	now := time.Now()
+	ts := now.Unix()
+	secret := "secret-key-42"
+	sig := ComputeHMAC(appID, token, ts, secret)
+
+	validMsg := "VERIFY " + appID + ":" + token + ":" + strconv.FormatInt(ts, 10) + ":" + sig
+
+	// 1. IsHMACVerificationMessage
+	if !IsHMACVerificationMessage(validMsg) {
+		t.Errorf("expected IsHMACVerificationMessage to be true for uppercase")
+	}
+	if !IsHMACVerificationMessage("verify " + appID + ":" + token) {
+		t.Errorf("expected IsHMACVerificationMessage to be true for lowercase")
+	}
+	if IsHMACVerificationMessage("HELLO WORLD") {
+		t.Errorf("expected IsHMACVerificationMessage to be false for normal text")
+	}
+
+	// 2. ParseHMACVerificationToken
+	parsed, err := ParseHMACVerificationToken(validMsg)
+	if err != nil {
+		t.Fatalf("failed to parse valid token: %v", err)
+	}
+	if parsed.AppID != appID || parsed.Token != token || parsed.Timestamp != ts || parsed.Signature != sig {
+		t.Fatalf("parsed token mismatch: %+v", parsed)
+	}
+
+	// 3. VerifyHMAC
+	if !VerifyHMAC(parsed, secret) {
+		t.Errorf("expected VerifyHMAC to return true for correct secret")
+	}
+	if VerifyHMAC(parsed, "wrong-secret") {
+		t.Errorf("expected VerifyHMAC to return false for wrong secret")
+	}
+
+	// 4. Tampered signature
+	tampered := *parsed
+	tampered.Signature = "0000000000000000000000000000000000000000000000000000000000000000"
+	if VerifyHMAC(&tampered, secret) {
+		t.Errorf("expected VerifyHMAC to reject tampered signature")
+	}
+
+	// 5. Invalid parsing cases
+	invalidCases := []string{
+		"NOT_VERIFY kb:token:123:abc",
+		"VERIFY kb:token:123", // missing signature
+		"VERIFY kb:token:123:abc:extra", // too many fields
+		"VERIFY kb::123:abc", // empty token
+		"VERIFY kb:token:not-a-number:abc", // invalid timestamp
+		"VERIFY kb:token:123:not-hex-sig-xyz!", // invalid hex
+	}
+	for _, ic := range invalidCases {
+		if _, err := ParseHMACVerificationToken(ic); err == nil {
+			t.Errorf("expected error for invalid token format: %q", ic)
+		}
+	}
+
+	// 6. Timestamp freshness
+	if !CheckTimestampFreshness(ts, 5*time.Minute, now) {
+		t.Errorf("expected fresh timestamp to be valid")
+	}
+	expiredTs := now.Add(-10 * time.Minute).Unix()
+	if CheckTimestampFreshness(expiredTs, 5*time.Minute, now) {
+		t.Errorf("expected 10-minute old timestamp to be rejected with 5m TTL")
+	}
+}
+
+func TestHandler_HMAC_FullFlow(t *testing.T) {
+	type webhookReqBody struct {
+		From string `json:"from"`
+		Body string `json:"body"`
+	}
+
+	webhookReceived := make(chan webhookReqBody, 1)
+	webhookServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req webhookReqBody
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		webhookReceived <- req
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer webhookServer.Close()
+
+	appSecret := "kheti-badi-shared-secret"
+	cfg := config.VerificationConfig{
+		Enabled: true,
+		RateLimit: config.RateLimitConfig{
+			MaxAttempts: 3,
+			Window:      "1m",
+		},
+		Apps: map[string]config.AppVerifyConfig{
+			"kb": {
+				Name:           "kheti-badi",
+				AuthType:       "hmac",
+				Secret:         appSecret,
+				WebhookURL:     webhookServer.URL,
+				TTL:            "5m",
+				SuccessMessage: "✅ Verified successfully! Please return to Kheti-Badi.",
+			},
+		},
+		Messages: config.VerificationMessages{
+			Success:       "Standard success",
+			Expired:       "Expired token",
+			Blacklisted:   "Blacklisted",
+			Error:         "Server error",
+		},
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	bl := &mockBlacklist{blocked: make(map[string]bool)}
+	handler := NewHandler(nil, nil, bl, cfg, webhookServer.Client(), logger)
+
+	tokenHex := "abcdef0123456789abcdef0123456789"
+	ts := time.Now().Unix()
+	sig := ComputeHMAC("kb", tokenHex, ts, appSecret)
+	validMessage := fmt.Sprintf("VERIFY kb:%s:%d:%s", tokenHex, ts, sig)
+	sender := "+91 (987) 654-3210"
+
+	// 1. Success Flow
+	resp := handler.Handle(context.Background(), sender, validMessage)
+	if resp != "✅ Verified successfully! Please return to Kheti-Badi." {
+		t.Fatalf("unexpected response: %q", resp)
+	}
+
+	select {
+	case received := <-webhookReceived:
+		if received.From != "919876543210" {
+			t.Errorf("expected from=919876543210, got %q", received.From)
+		}
+		if received.Body != validMessage {
+			t.Errorf("expected body=%q, got %q", validMessage, received.Body)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for webhook callback")
+	}
+
+	// 2. Unknown App ID -> dropped (empty response, no webhook)
+	unknownAppSig := ComputeHMAC("unknown", tokenHex, ts, appSecret)
+	unknownMsg := fmt.Sprintf("VERIFY unknown:%s:%d:%s", tokenHex, ts, unknownAppSig)
+	resp = handler.Handle(context.Background(), sender, unknownMsg)
+	if resp != "" {
+		t.Errorf("expected empty string (dropped) for unknown app, got %q", resp)
+	}
+
+	// 3. Expired Timestamp -> returns Expired message, no webhook
+	expiredTs := time.Now().Add(-10 * time.Minute).Unix()
+	expiredSig := ComputeHMAC("kb", tokenHex, expiredTs, appSecret)
+	expiredMsg := fmt.Sprintf("VERIFY kb:%s:%d:%s", tokenHex, expiredTs, expiredSig)
+	resp = handler.Handle(context.Background(), sender, expiredMsg)
+	if resp != "Expired token" {
+		t.Errorf("expected Expired token message, got %q", resp)
+	}
+
+	// 4. Rate Limiter Exceeded (max_attempts = 3)
+	// We've already performed 3 attempts for 'sender'
+	resp = handler.Handle(context.Background(), sender, validMessage)
+	if resp != "" {
+		t.Errorf("expected 4th attempt to be dropped by rate limiter, got %q", resp)
+	}
+
+	// 5. Signature mismatch / tamper -> dropped
+	otherSender := "911234567890"
+	tamperedMsg := fmt.Sprintf("VERIFY kb:%s:%d:%s", tokenHex, ts, "deadbeef1234")
+	resp = handler.Handle(context.Background(), otherSender, tamperedMsg)
+	if resp != "" {
+		t.Errorf("expected empty string (dropped) for tampered signature, got %q", resp)
+	}
+
+	// 6. Blacklisted Sender
+	bl.blocked["911234567890"] = true
+	resp = handler.Handle(context.Background(), otherSender, validMessage)
+	if resp != "Blacklisted" {
+		t.Errorf("expected Blacklisted response, got %q", resp)
+	}
 }

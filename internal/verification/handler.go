@@ -1,12 +1,15 @@
 package verification
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/innomon/whatsadk/internal/auth"
 	"github.com/innomon/whatsadk/internal/config"
@@ -23,6 +26,8 @@ type Handler struct {
 	devOpsNumbers map[string]struct{}
 	httpClient    *http.Client
 	messages      config.VerificationMessages
+	apps          map[string]config.AppVerifyConfig
+	rateLimiter   *RateLimiter
 	logger        *slog.Logger
 }
 
@@ -45,17 +50,143 @@ func NewHandler(
 		devOpsNumbers: devOps,
 		httpClient:    httpClient,
 		messages:      cfg.Messages,
+		apps:          cfg.Apps,
+		rateLimiter:   NewRateLimiter(cfg.RateLimit.GetMaxAttempts(), cfg.RateLimit.GetWindow()),
 		logger:        logger,
 	}
 }
 
 func (h *Handler) Handle(ctx context.Context, senderPhone, messageBody string) string {
+	senderNormalized := normalizePhone(senderPhone)
+
+	if IsHMACVerificationMessage(messageBody) {
+		return h.handleHMAC(ctx, senderNormalized, messageBody)
+	}
+
+	return h.handleLegacyRSA(ctx, senderNormalized, messageBody)
+}
+
+func (h *Handler) handleHMAC(ctx context.Context, senderNormalized, messageBody string) string {
+	// 1. Rate limiter check (sliding window per sender)
+	if h.rateLimiter != nil && !h.rateLimiter.Allow(senderNormalized) {
+		h.logger.Warn("verification rate limit exceeded", "phone", senderNormalized)
+		return ""
+	}
+
+	// 2. Blacklist check
+	if h.blacklist != nil {
+		blocked, err := h.blacklist.IsBlacklisted(ctx, senderNormalized)
+		if err != nil {
+			h.logger.Error("blacklist check failed", "error", err, "phone", senderNormalized)
+			return h.messages.Error
+		}
+		if blocked {
+			h.logger.Warn("blacklisted number attempted verification", "phone", senderNormalized)
+			return h.messages.Blacklisted
+		}
+	}
+
+	// 3. Parse HMAC verification token
+	token, err := ParseHMACVerificationToken(messageBody)
+	if err != nil {
+		h.logger.Warn("invalid hmac verification token format", "error", err, "phone", senderNormalized)
+		return ""
+	}
+
+	// 4. Extract app_id and lookup in configured apps
+	appCfg, ok := h.apps[token.AppID]
+	if !ok {
+		h.logger.Warn("unknown verification app_id", "app_id", token.AppID, "phone", senderNormalized)
+		return ""
+	}
+
+	// 5. Validate timestamp freshness (|now - timestamp| <= App TTL)
+	now := time.Now()
+	if !CheckTimestampFreshness(token.Timestamp, appCfg.GetTTL(), now) {
+		h.logger.Warn("verification token expired",
+			"app_id", token.AppID,
+			"timestamp", token.Timestamp,
+			"phone", senderNormalized,
+		)
+		return h.messages.Expired
+	}
+
+	// 6. Verify HMAC-SHA256 signature (constant-time)
+	secret := appCfg.GetSecret()
+	if !VerifyHMAC(token, secret) {
+		h.logger.Warn("verification signature mismatch / tamper detected",
+			"app_id", token.AppID,
+			"phone", senderNormalized,
+		)
+		return ""
+	}
+
+	// 7. Dispatch HTTP POST to App Webhook
+	if err := h.postHMACWebhook(ctx, appCfg.WebhookURL, senderNormalized, token.RawBody); err != nil {
+		h.logger.Error("hmac webhook callback failed",
+			"url", appCfg.WebhookURL,
+			"app_id", token.AppID,
+			"error", err,
+		)
+		return h.messages.Error
+	}
+
+	h.logger.Info("hmac verification successful",
+		"phone", senderNormalized,
+		"app_id", token.AppID,
+		"token", token.Token,
+	)
+
+	if appCfg.SuccessMessage != "" {
+		return appCfg.SuccessMessage
+	}
+	return h.messages.Success
+}
+
+type hmacWebhookPayload struct {
+	From string `json:"from"`
+	Body string `json:"body"`
+}
+
+func (h *Handler) postHMACWebhook(ctx context.Context, webhookURL, from, body string) error {
+	payload := hmacWebhookPayload{
+		From: from,
+		Body: body,
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal webhook payload: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(payloadBytes))
+	if err != nil {
+		return fmt.Errorf("create webhook request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("execute webhook: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		return fmt.Errorf("webhook returned status %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
+func (h *Handler) handleLegacyRSA(ctx context.Context, senderNormalized, messageBody string) string {
 	claims := auth.IsVerificationToken(messageBody)
 	if claims == nil {
 		return ""
 	}
 
-	senderNormalized := normalizePhone(senderPhone)
+	if h.rateLimiter != nil && !h.rateLimiter.Allow(senderNormalized) {
+		h.logger.Warn("verification rate limit exceeded", "phone", senderNormalized)
+		return ""
+	}
 
 	if h.blacklist != nil {
 		blocked, err := h.blacklist.IsBlacklisted(ctx, senderNormalized)
@@ -67,6 +198,11 @@ func (h *Handler) Handle(ctx context.Context, senderPhone, messageBody string) s
 			h.logger.Warn("blacklisted number attempted verification", "phone", senderNormalized)
 			return h.messages.Blacklisted
 		}
+	}
+
+	if h.keys == nil {
+		h.logger.Warn("key registry not initialized for legacy rsa token")
+		return h.messages.Error
 	}
 
 	appKey, err := h.keys.GetAppPublicKey(claims.AppName)
@@ -94,6 +230,11 @@ func (h *Handler) Handle(ctx context.Context, senderPhone, messageBody string) s
 			"sender", senderNormalized,
 			"claim_mobile", mobileNormalized,
 		)
+	}
+
+	if h.jwtGen == nil {
+		h.logger.Error("jwt generator not configured")
+		return h.messages.Error
 	}
 
 	callbackJWT, err := h.jwtGen.TokenWithAudience(senderNormalized, verified.AppName)

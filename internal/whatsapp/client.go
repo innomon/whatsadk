@@ -196,6 +196,31 @@ func (c *Client) storeResponse(ctx context.Context, userID, uniqueID string, con
 	}
 }
 
+func (c *Client) storeVerificationAudit(ctx context.Context, userID, uniqueID, requestText, responseText string) {
+	if c.store == nil {
+		return
+	}
+	path := fmt.Sprintf("whatsmeow/%s/%s/verification", userID, uniqueID)
+	metadata := map[string]interface{}{
+		"mime_type": "application/json",
+		"metadata": map[string]interface{}{
+			"audit_type": "reverse_otp_verification",
+			"request":    requestText,
+			"response":   responseText,
+		},
+	}
+	payload, _ := json.Marshal(map[string]interface{}{
+		"user_id":   userID,
+		"unique_id": uniqueID,
+		"request":   requestText,
+		"response":  responseText,
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	})
+	if err := c.store.PutFile(ctx, path, metadata, payload, time.Now()); err != nil {
+		c.log.Errorf("Failed to store verification audit to filesys: %v", err)
+	}
+}
+
 func (c *Client) Connect(ctx context.Context) error {
 	if c.wac.Store.ID == nil {
 		qrChan, err := c.wac.GetQRChannel(ctx)
@@ -566,10 +591,14 @@ func (c *Client) handleMessage(msg *events.Message) {
 	// Process media and documents
 	mediaParts := c.processAndStoreMedia(ctx, userID, uniqueID, msg)
 
-	if c.verifyHandler != nil && auth.IsVerificationToken(text) != nil {
+	if c.verifyHandler != nil && (auth.IsVerificationToken(text) != nil || verification.IsHMACVerificationMessage(text)) {
 		response := c.verifyHandler.Handle(ctx, userID, text)
 		if response != "" {
 			c.sendTextMessage(ctx, msg.Info.Chat, userID, uniqueID, response, "system", uniqueID)
+			c.storeVerificationAudit(ctx, userID, uniqueID, text, response)
+			return
+		}
+		if verification.IsHMACVerificationMessage(text) {
 			return
 		}
 	}

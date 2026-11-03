@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"go-pear/pkg/policy"
 	"gopkg.in/yaml.v3"
@@ -64,24 +65,74 @@ type CronJobConfig struct {
 
 // VerificationConfig holds configuration settings for the Reverse OTP (Mobile-Originated)
 // verification flow. This allows the gateway to verify phone numbers via incoming WhatsApp
-// tokens and signed HTTP callbacks.
+// tokens and signed HTTP callbacks or HMAC multi-tenant webhooks.
 type VerificationConfig struct {
 	// Enabled controls whether the Reverse OTP verification handler is active.
 	Enabled bool `yaml:"enabled"`
+	// RateLimit configures per-sender rate limiting for verification requests.
+	RateLimit RateLimitConfig `yaml:"rate_limit"`
 	// CallbackTimeout sets the timeout duration for HTTP callback requests to verifying applications.
 	CallbackTimeout string `yaml:"callback_timeout"`
 	// DatabaseURL specifies the DSN for the PostgreSQL/SurrealDB storage used for verification metadata and blacklists.
 	DatabaseURL string `yaml:"database_url"`
 	// DevOpsNumbers lists phone numbers that can bypass sender-token mismatch checks.
 	DevOpsNumbers []string `yaml:"devops_numbers"`
-	// Apps maps application names to their respective cryptographic public key configurations.
+	// Apps maps application names to their respective cryptographic and routing configurations.
 	Apps map[string]AppVerifyConfig `yaml:"apps"`
 	// Messages configures custom templates for user-facing status responses sent on WhatsApp.
 	Messages VerificationMessages `yaml:"messages"`
 }
 
+type RateLimitConfig struct {
+	MaxAttempts int    `yaml:"max_attempts"`
+	Window      string `yaml:"window"`
+}
+
+func (r RateLimitConfig) GetMaxAttempts() int {
+	if r.MaxAttempts <= 0 {
+		return 5
+	}
+	return r.MaxAttempts
+}
+
+func (r RateLimitConfig) GetWindow() time.Duration {
+	if r.Window == "" {
+		return 1 * time.Minute
+	}
+	d, err := time.ParseDuration(r.Window)
+	if err != nil || d <= 0 {
+		return 1 * time.Minute
+	}
+	return d
+}
+
 type AppVerifyConfig struct {
-	PublicKeyPath string `yaml:"public_key_path"`
+	Name           string `yaml:"name"`
+	AuthType       string `yaml:"auth_type"` // "hmac" or "rsa"
+	Secret         string `yaml:"secret"`
+	WebhookURL     string `yaml:"webhook_url"`
+	TTL            string `yaml:"ttl"`
+	SuccessMessage string `yaml:"success_message"`
+	PublicKeyPath  string `yaml:"public_key_path"`
+}
+
+func (a AppVerifyConfig) IsHMAC() bool {
+	return strings.EqualFold(a.AuthType, "hmac") || (a.Secret != "" && a.PublicKeyPath == "")
+}
+
+func (a AppVerifyConfig) GetSecret() string {
+	return os.ExpandEnv(a.Secret)
+}
+
+func (a AppVerifyConfig) GetTTL() time.Duration {
+	if a.TTL == "" {
+		return 5 * time.Minute
+	}
+	d, err := time.ParseDuration(a.TTL)
+	if err != nil || d <= 0 {
+		return 5 * time.Minute
+	}
+	return d
 }
 
 type VerificationMessages struct {
@@ -319,6 +370,25 @@ func (c *Config) applyDefaults() {
 	if c.ADK.AppName == "" {
 		c.ADK.AppName = "my_agent"
 	}
+	if c.Verification.RateLimit.MaxAttempts == 0 {
+		c.Verification.RateLimit.MaxAttempts = 5
+	}
+	if c.Verification.RateLimit.Window == "" {
+		c.Verification.RateLimit.Window = "1m"
+	}
+	for k, app := range c.Verification.Apps {
+		if app.Secret != "" {
+			app.Secret = os.ExpandEnv(app.Secret)
+		}
+		if app.AuthType == "" {
+			if app.Secret != "" {
+				app.AuthType = "hmac"
+			} else if app.PublicKeyPath != "" {
+				app.AuthType = "rsa"
+			}
+		}
+		c.Verification.Apps[k] = app
+	}
 	if c.Verification.Messages.Success == "" {
 		c.Verification.Messages.Success = "✅ Verification successful! You can now return to the app."
 	}
@@ -431,6 +501,14 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if v := os.Getenv("VERIFICATION_ENABLED"); v == "true" {
 		c.Verification.Enabled = true
+	}
+	if v := os.Getenv("VERIFICATION_RATE_LIMIT_MAX_ATTEMPTS"); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			c.Verification.RateLimit.MaxAttempts = i
+		}
+	}
+	if v := os.Getenv("VERIFICATION_RATE_LIMIT_WINDOW"); v != "" {
+		c.Verification.RateLimit.Window = v
 	}
 	if v := os.Getenv("VERIFICATION_CALLBACK_TIMEOUT"); v != "" {
 		c.Verification.CallbackTimeout = v

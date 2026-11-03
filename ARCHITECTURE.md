@@ -142,7 +142,7 @@ Wraps the [whatsmeow](https://github.com/tulir/whatsmeow) library and provides m
   - **Normalization Layer:** Transforms platform-specific formats into a unified ADK standard (`agent.Part`).
   - **Inbound (WA ➔ ADK):**
     - **Images:** Automatically resized and normalized to **896x896 JPEG**.
-    - **Audio:** Converted to **16kHz Mono WAV**.
+    - **Audio / Voice Messages:** Decrypted from WhatsApp (`waE2E.AudioMessage` / PTT), stored, and converted via FFmpeg to **16kHz Mono WAV** (`audio/wav`) base64-encoded `InlineData`. See [/docs/voice-message-pipeline.md](/docs/voice-message-pipeline.md) for full schema and flow.
     - **Video:** Sampled at **1 FPS** into JPEG frames.
     - **Location:** Standardized as a **Text Part** (e.g., `Location: [lat, lng]`) to ensure compatibility with LLM text reasoning.
   - **Outbound (ADK ➔ WA):** Uploads media parts from ADK to WhatsApp servers and sends them as native WhatsApp messages (Image, Audio, Video, Document). Text parts are sent as standard conversation messages.
@@ -227,17 +227,26 @@ Manages periodic A2A (Agent-to-Agent) tasks:
 - **Memory Persistence (`store.go`)** — saves the summary of each run to the `filesys` table (`cron/<job_name>/summary`).
 - **Execution (`manager.go`)** — retrieves the previous summary, injects it into the next agent request, and captures the new response as the next summary.
 
-### `internal/verification` — Reverse OTP
+### `internal/verification` — Reverse OTP & Multi-Tenant HMAC
 
-Handles the reverse OTP verification flow:
+Handles phone number verification flows:
 
-1. Detects verification tokens in incoming WhatsApp messages
-2. Looks up the app's public key from `KeyRegistry`
-3. Cryptographically verifies the token signature and expiry
-4. Validates the sender's phone number matches the `mobile` claim
-5. Signs a callback JWT (with audience set to the app name)
-6. POSTs the signed JWT to the app's `callback_url`
-7. Returns a user-facing confirmation/error message
+1. **Legacy RSA JWT Flow**:
+   - Detects verification tokens in incoming WhatsApp messages (`eyJ...`)
+   - Looks up the app's public key from `KeyRegistry`
+   - Cryptographically verifies the token signature and expiry
+   - Validates the sender's phone number matches the `mobile` claim
+   - Signs a callback JWT (with audience set to the app name) and POSTs to the app's `callback_url`
+   - Relays OTP to user
+
+2. **Multi-Tenant HMAC Flow (`VERIFY <app_id>:<token>:<timestamp>:<signature>`)**:
+   - Intercepts verification messages via `IsHMACVerificationMessage` before routing to ADK
+   - Enforces in-memory sliding-window rate limiting per sender (`RateLimiter`)
+   - Parses compact token and checks timestamp freshness against app `ttl` (default 5m)
+   - Validates HMAC-SHA256 signature against tenant secret using constant-time `hmac.Equal`
+   - POSTs verified payload to app's configured `webhook_url` (`app_id`, `token`, `phone`, `verified: true`, `timestamp`)
+   - Responds to the sender with tenant `success_message` and logs audit entry into `filesys` (`whatsmeow/<userID>/<uniqueID>/verification`)
+   - Exits early to avoid forwarding verification payloads to ADK agents
 
 ### Simulators — Testing Tools
 

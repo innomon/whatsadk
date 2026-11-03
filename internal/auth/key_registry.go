@@ -20,6 +20,9 @@ func NewKeyRegistry(apps map[string]config.AppVerifyConfig) (*KeyRegistry, error
 	}
 
 	for appName, appCfg := range apps {
+		if appCfg.IsHMAC() || appCfg.PublicKeyPath == "" {
+			continue
+		}
 		key, err := loadPublicKey(appCfg.PublicKeyPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load public key for app %q: %w", appName, err)

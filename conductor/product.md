@@ -17,4 +17,4 @@ WhatsADK is a high-performance Go gateway and agent interaction platform bridgin
 3. **Multi-Modal Media Bridge:** Automatic image scaling (896x896 JPEG), audio transcoding (16kHz Mono WAV), and media routing.
 4. **Model Context Protocol (MCP) Integration:** Stdio-based MCP server providing full agent control over messaging, contacts, file system logs, blocklists, and WhatsApp groups.
 5. **Interactive TUI & Command Utilities:** Terminal-based user interfaces and handcrafted CLI tooling for gateway monitoring, debugging, and database management.
-6. **Robust Security & Verification:** RS256 JWT auth, EdDSA-based WhatsApp OAuth, and reverse OTP verification.
+6. **Robust Security & Verification:** RS256 JWT auth, EdDSA-based WhatsApp OAuth, and reverse OTP verification with Multi-Tenant HMAC SHA-256 token validation and sliding-window rate limiting.

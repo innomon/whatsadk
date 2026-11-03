@@ -9,7 +9,7 @@ A high-performance Go gateway that connects WhatsApp to remote ADK Agent service
   - **WABA Mode:** Connect via the official WhatsApp Business Cloud API with webhook support.
 - **Persistent Storage:** WhatsApp sessions, contacts, and message logs can be stored in PostgreSQL, SurrealDB, or embedded pure Go **[SQLite P2P Decentralized Storage](docs/sqlite-p2p-storage.md)** with automatic LAN/WAN mesh replication.
 - **Two-Way Media Bridge:** Automatically intercept, transform, and forward WhatsApp media (images, audio, video) to the ADK agent.
-  - **Normalization:** Images are normalized to **896x896 JPEG**; audio is converted to **16kHz Mono WAV**.
+  - **Normalization:** Images are normalized to **896x896 JPEG**; audio / voice messages (PTT) are downloaded, persisted, and converted to **16kHz Mono WAV** (see [Voice Message & Audio Pipeline](docs/voice-message-pipeline.md)).
   - **Location:** Native location shares are standardized as **Text Parts** (`Location: [lat, lng]`) for the agent.
   - **Outbound:** Supports sending media back from the agent to the WhatsApp user.
 - **Agent Interaction:** Support for both `/run` (single response) and `/run_sse` (streaming) endpoints.
@@ -489,6 +489,51 @@ verification:
 
 Each app must register its RSA public key and callback base URL. The backend callback must return `{"otp":"..."}` in the 200 response body.
 
+### Multi-Tenant HMAC Verification (Reverse OTP)
+
+WhatsADK also supports lightweight **Multi-Tenant HMAC SHA-256** verification (e.g. for reverse-OTP verification via WhatsApp click-to-chat links) without requiring RSA key pairs.
+
+#### Format
+Users send a message in the format:
+```text
+VERIFY <app_id>:<token>:<timestamp>:<signature>
+```
+Example:
+```text
+VERIFY kb:a1b2c3d4e5f6:1700000000:7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069
+```
+
+- **Signature computation:** `HMAC-SHA256(secret, app_id + ":" + token + ":" + timestamp)` formatted as lowercase hex.
+- **Sliding-window Rate Limiting:** Configured per-sender rate limiting (default 5 attempts per 10 minutes) protects against brute force attacks. Exceeded attempts or tampered tokens are dropped silently.
+- **Webhook Dispatch:** On successful HMAC validation and timestamp freshness check, the gateway dispatches an HTTP POST JSON webhook to the tenant app's `webhook_url`:
+  ```json
+  {
+    "app_id": "kb",
+    "token": "a1b2c3d4e5f6",
+    "phone": "919876543210",
+    "verified": true,
+    "timestamp": 1700000000
+  }
+  ```
+- **Response & Audit:** The gateway replies to the user with the tenant's configured `success_message` and saves an audit record to `filesys` (`whatsmeow/<userID>/<uniqueID>/verification`).
+
+#### Configuration
+
+```yaml
+verification:
+  enabled: true
+  rate_limit:
+    max_attempts: 5
+    window: "10m"
+  apps:
+    kb:
+      auth_type: "hmac"
+      secret: "your-tenant-hmac-secret-key"
+      webhook_url: "http://localhost:5001/api/auth/whatsapp/webhook"
+      ttl: "5m"
+      success_message: "Your phone number has been verified successfully!"
+```
+
 ## Cron Heartbeat Timers
 
 The gateway can periodically execute tasks on a remote ADK agent (A2A - Agent-to-Agent). Each run maintains a "memory" by retrieving the summary of the previous run and providing it as context to the agent.
@@ -859,6 +904,7 @@ For full documentation, entity schemas, and advanced migration guides, see [cmd/
 
 - For a detailed architecture overview, see [ARCHITECTURE.md](ARCHITECTURE.md).
 - For a deep dive into the end-to-end user message flow and ADK routing, see [docs/whatsapp_user_interaction.md](docs/whatsapp_user_interaction.md).
+- For details on WhatsApp voice message download and ADK payload formatting, see [docs/voice-message-pipeline.md](docs/voice-message-pipeline.md).
 - For a deep dive into the dynamic application selection and provisioning flows, see [docs/routing_and_app_provisioning.md](docs/routing_and_app_provisioning.md).
 
 ## Dependencies

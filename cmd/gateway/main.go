@@ -91,8 +91,15 @@ func main() {
 		if err != nil {
 			log.Fatalf("Failed to load verification app keys: %v", err)
 		}
-		if jwtGen == nil {
-			log.Fatalf("Verification requires JWT auth to be enabled (private_key_path must be set) ")
+		hasRSA := false
+		for _, app := range cfg.Verification.Apps {
+			if !app.IsHMAC() && app.PublicKeyPath != "" {
+				hasRSA = true
+				break
+			}
+		}
+		if hasRSA && jwtGen == nil {
+			log.Fatalf("Verification with RSA apps requires JWT auth to be enabled (private_key_path must be set)")
 		}
 
 		timeout, _ := time.ParseDuration(cfg.Verification.CallbackTimeout)
