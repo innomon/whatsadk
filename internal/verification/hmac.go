@@ -112,3 +112,50 @@ func CheckTimestampFreshness(tokenTimestamp int64, ttl time.Duration, now time.T
 	}
 	return diff <= ttl
 }
+
+// SignWebhookPayload generates an HMAC-SHA256 signature for outgoing webhook calls over "<timestamp>.<bodyBytes>".
+// It returns formatted as "sha256=<hex>".
+func SignWebhookPayload(secret string, timestamp int64, body []byte) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(strconv.FormatInt(timestamp, 10)))
+	mac.Write([]byte("."))
+	mac.Write(body)
+	return "sha256=" + hex.EncodeToString(mac.Sum(nil))
+}
+
+// VerifyWebhookSignature verifies that the given signatureHeader matches HMAC-SHA256(secret, timestamp + "." + body)
+// and that the timestamp is within tolerance of now.
+func VerifyWebhookSignature(secret string, body []byte, timestampHeader, signatureHeader string, tolerance time.Duration, now time.Time) error {
+	if secret == "" {
+		return errors.New("empty webhook secret")
+	}
+	if timestampHeader == "" {
+		return errors.New("missing timestamp header")
+	}
+	if signatureHeader == "" {
+		return errors.New("missing signature header")
+	}
+
+	ts, err := strconv.ParseInt(timestampHeader, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid timestamp header: %w", err)
+	}
+
+	if tolerance > 0 && !CheckTimestampFreshness(ts, tolerance, now) {
+		return errors.New("webhook timestamp outside tolerance window")
+	}
+
+	expectedSig := SignWebhookPayload(secret, ts, body)
+
+	// Strip "sha256=" prefix if present in signatureHeader for comparison
+	actualSig := signatureHeader
+	if !strings.HasPrefix(actualSig, "sha256=") {
+		actualSig = "sha256=" + actualSig
+	}
+
+	if !hmac.Equal([]byte(expectedSig), []byte(actualSig)) {
+		return errors.New("invalid webhook signature")
+	}
+
+	return nil
+}

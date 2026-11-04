@@ -244,7 +244,7 @@ Handles phone number verification flows:
    - Enforces in-memory sliding-window rate limiting per sender (`RateLimiter`)
    - Parses compact token and checks timestamp freshness against app `ttl` (default 5m)
    - Validates HMAC-SHA256 signature against tenant secret using constant-time `hmac.Equal`
-   - POSTs verified payload to app's configured `webhook_url` (`app_id`, `token`, `phone`, `verified: true`, `timestamp`)
+   - POSTs payload (`{"from": "...", "body": "..."}`) to app's configured `webhook_url` signed with `X-Signature-256` (`HMAC-SHA256(secret, timestamp + "." + body)`) and `X-Signature-Timestamp` for anti-spoofing and anti-replay protection
    - Responds to the sender with tenant `success_message` and logs audit entry into `filesys` (`whatsmeow/<userID>/<uniqueID>/verification`)
    - Exits early to avoid forwarding verification payloads to ADK agents
 

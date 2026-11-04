@@ -2,6 +2,8 @@
 
 This file acts as a registry for the development tracks of the WhatsADK project.
 
+- [x] [hmac_webhook_outbound_signing_20261104](conductor/tracks/hmac_webhook_outbound_signing_20261104/) - HMAC Webhook Outbound Signature Signing & Anti-Spoofing.
+
 ---
 
 ## Completed Tracks

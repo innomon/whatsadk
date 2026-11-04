@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -121,8 +122,8 @@ func (h *Handler) handleHMAC(ctx context.Context, senderNormalized, messageBody 
 		return ""
 	}
 
-	// 7. Dispatch HTTP POST to App Webhook
-	if err := h.postHMACWebhook(ctx, appCfg.WebhookURL, senderNormalized, token.RawBody); err != nil {
+	// 7. Dispatch HTTP POST to App Webhook with HMAC signature
+	if err := h.postHMACWebhook(ctx, appCfg.WebhookURL, appCfg.GetSecret(), senderNormalized, token.RawBody); err != nil {
 		h.logger.Error("hmac webhook callback failed",
 			"url", appCfg.WebhookURL,
 			"app_id", token.AppID,
@@ -148,7 +149,7 @@ type hmacWebhookPayload struct {
 	Body string `json:"body"`
 }
 
-func (h *Handler) postHMACWebhook(ctx context.Context, webhookURL, from, body string) error {
+func (h *Handler) postHMACWebhook(ctx context.Context, webhookURL, secret, from, body string) error {
 	payload := hmacWebhookPayload{
 		From: from,
 		Body: body,
@@ -163,6 +164,13 @@ func (h *Handler) postHMACWebhook(ctx context.Context, webhookURL, from, body st
 		return fmt.Errorf("create webhook request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+
+	nowTs := time.Now().Unix()
+	req.Header.Set("X-Signature-Timestamp", strconv.FormatInt(nowTs, 10))
+	if secret != "" {
+		sig := SignWebhookPayload(secret, nowTs, payloadBytes)
+		req.Header.Set("X-Signature-256", sig)
+	}
 
 	resp, err := h.httpClient.Do(req)
 	if err != nil {

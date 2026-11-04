@@ -505,16 +505,17 @@ VERIFY kb:a1b2c3d4e5f6:1700000000:7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677
 
 - **Signature computation:** `HMAC-SHA256(secret, app_id + ":" + token + ":" + timestamp)` formatted as lowercase hex.
 - **Sliding-window Rate Limiting:** Configured per-sender rate limiting (default 5 attempts per 10 minutes) protects against brute force attacks. Exceeded attempts or tampered tokens are dropped silently.
-- **Webhook Dispatch:** On successful HMAC validation and timestamp freshness check, the gateway dispatches an HTTP POST JSON webhook to the tenant app's `webhook_url`:
+- **Webhook Dispatch & Outbound Anti-Spoofing:** On successful HMAC validation and timestamp freshness check, the gateway dispatches an HTTP POST JSON webhook to the tenant app's `webhook_url`:
   ```json
   {
-    "app_id": "kb",
-    "token": "a1b2c3d4e5f6",
-    "phone": "919876543210",
-    "verified": true,
-    "timestamp": 1700000000
+    "from": "919876543210",
+    "body": "VERIFY kb:a1b2c3d4e5f6:1700000000:7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069"
   }
   ```
+  To prevent webhook spoofing and replay attacks, the gateway signs every outbound webhook with the tenant's shared HMAC secret:
+  - Header `X-Signature-Timestamp`: Unix timestamp (seconds) when the webhook was sent.
+  - Header `X-Signature-256`: `sha256=<hex>` computed as `HMAC-SHA256(secret, timestamp + "." + request_body)`.
+  - The tenant webhook receiver should verify `X-Signature-256` using constant-time comparison and verify that `abs(now - X-Signature-Timestamp)` is within tolerance (e.g. 5 minutes).
 - **Response & Audit:** The gateway replies to the user with the tenant's configured `success_message` and saves an audit record to `filesys` (`whatsmeow/<userID>/<uniqueID>/verification`).
 
 #### Configuration

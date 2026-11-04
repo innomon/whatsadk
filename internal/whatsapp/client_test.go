@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -90,18 +91,31 @@ func TestClient_HandleMessage_HMACVerification(t *testing.T) {
 	ctx := context.Background()
 
 	type webhookPayload struct {
-		From string `json:"from"`
-		Body string `json:"body"`
+		From      string
+		Body      string
+		RawBody   []byte
+		SigHeader string
+		TsHeader  string
 	}
 
 	webhookReceived := make(chan webhookPayload, 1)
 	webhookSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var p webhookPayload
-		if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+		raw, _ := io.ReadAll(r.Body)
+		var p struct {
+			From string `json:"from"`
+			Body string `json:"body"`
+		}
+		if err := json.Unmarshal(raw, &p); err != nil {
 			http.Error(w, err.Error(), 400)
 			return
 		}
-		webhookReceived <- p
+		webhookReceived <- webhookPayload{
+			From:      p.From,
+			Body:      p.Body,
+			RawBody:   raw,
+			SigHeader: r.Header.Get("X-Signature-256"),
+			TsHeader:  r.Header.Get("X-Signature-Timestamp"),
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer webhookSrv.Close()
@@ -179,6 +193,15 @@ func TestClient_HandleMessage_HMACVerification(t *testing.T) {
 		}
 		if payload.Body != verifyText {
 			t.Errorf("expected body=%s, got %s", verifyText, payload.Body)
+		}
+		if payload.SigHeader == "" {
+			t.Errorf("expected X-Signature-256 header")
+		}
+		if payload.TsHeader == "" {
+			t.Errorf("expected X-Signature-Timestamp header")
+		}
+		if err := verification.VerifyWebhookSignature(appSecret, payload.RawBody, payload.TsHeader, payload.SigHeader, 1*time.Minute, time.Now()); err != nil {
+			t.Errorf("failed to verify webhook signature in client test: %v", err)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for webhook callback")

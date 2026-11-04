@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -424,22 +425,64 @@ func TestHMAC_TokenParsingAndFreshness(t *testing.T) {
 	if CheckTimestampFreshness(expiredTs, 5*time.Minute, now) {
 		t.Errorf("expected 10-minute old timestamp to be rejected with 5m TTL")
 	}
+
+	// 7. Outbound Webhook Signing & Verification
+	payloadBody := []byte(`{"from":"919876543210","body":"VERIFY test"}`)
+	outboundSig := SignWebhookPayload(secret, now.Unix(), payloadBody)
+	if !strings.HasPrefix(outboundSig, "sha256=") {
+		t.Errorf("expected signature to have sha256= prefix, got %s", outboundSig)
+	}
+
+	tsStr := strconv.FormatInt(now.Unix(), 10)
+	if err := VerifyWebhookSignature(secret, payloadBody, tsStr, outboundSig, 5*time.Minute, now); err != nil {
+		t.Errorf("expected signature verification to succeed, got %v", err)
+	}
+
+	// Tampered body
+	tamperedBody := []byte(`{"from":"919876543210","body":"VERIFY tampered"}`)
+	if err := VerifyWebhookSignature(secret, tamperedBody, tsStr, outboundSig, 5*time.Minute, now); err == nil {
+		t.Errorf("expected signature verification to fail for tampered body")
+	}
+
+	// Expired webhook timestamp
+	oldTsStr := strconv.FormatInt(now.Add(-10*time.Minute).Unix(), 10)
+	if err := VerifyWebhookSignature(secret, payloadBody, oldTsStr, outboundSig, 5*time.Minute, now); err == nil {
+		t.Errorf("expected verification to fail for expired timestamp")
+	}
+
+	// Wrong secret
+	if err := VerifyWebhookSignature("wrong-secret", payloadBody, tsStr, outboundSig, 5*time.Minute, now); err == nil {
+		t.Errorf("expected verification to fail for wrong secret")
+	}
 }
 
 func TestHandler_HMAC_FullFlow(t *testing.T) {
 	type webhookReqBody struct {
-		From string `json:"from"`
-		Body string `json:"body"`
+		From         string
+		Body         string
+		RawBody      []byte
+		SigHeader    string
+		TsHeader     string
 	}
 
 	webhookReceived := make(chan webhookReqBody, 1)
 	webhookServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var req webhookReqBody
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		raw, _ := io.ReadAll(r.Body)
+		var parsed struct {
+			From string `json:"from"`
+			Body string `json:"body"`
+		}
+		if err := json.Unmarshal(raw, &parsed); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		webhookReceived <- req
+		webhookReceived <- webhookReqBody{
+			From:      parsed.From,
+			Body:      parsed.Body,
+			RawBody:   raw,
+			SigHeader: r.Header.Get("X-Signature-256"),
+			TsHeader:  r.Header.Get("X-Signature-Timestamp"),
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer webhookServer.Close()
@@ -492,6 +535,16 @@ func TestHandler_HMAC_FullFlow(t *testing.T) {
 		}
 		if received.Body != validMessage {
 			t.Errorf("expected body=%q, got %q", validMessage, received.Body)
+		}
+		if received.SigHeader == "" {
+			t.Errorf("expected X-Signature-256 header to be present")
+		}
+		if received.TsHeader == "" {
+			t.Errorf("expected X-Signature-Timestamp header to be present")
+		}
+		// Verify signature matches using VerifyWebhookSignature helper
+		if err := VerifyWebhookSignature(appSecret, received.RawBody, received.TsHeader, received.SigHeader, 1*time.Minute, time.Now()); err != nil {
+			t.Errorf("failed to verify received webhook signature: %v", err)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for webhook callback")
