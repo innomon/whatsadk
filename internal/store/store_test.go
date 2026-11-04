@@ -117,6 +117,51 @@ func TestAddBlacklist_Duplicate(t *testing.T) {
 	}
 }
 
+func TestWhitelist_Operations(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	ok, err := s.IsWhitelisted(ctx, "919988776655")
+	if err != nil {
+		t.Fatalf("unexpected error checking whitelist: %v", err)
+	}
+	if ok {
+		t.Fatal("expected not whitelisted initially")
+	}
+
+	if err := s.AddWhitelist(ctx, "919988776655", "verified user"); err != nil {
+		t.Fatalf("failed to add whitelist: %v", err)
+	}
+
+	ok, err = s.IsWhitelisted(ctx, "919988776655")
+	if err != nil {
+		t.Fatalf("unexpected error checking whitelist: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected whitelisted after add")
+	}
+
+	list, err := s.ListWhitelist(ctx)
+	if err != nil {
+		t.Fatalf("failed to list whitelist: %v", err)
+	}
+	if len(list) != 1 || list[0].Phone != "919988776655" {
+		t.Fatalf("unexpected whitelist list result: %+v", list)
+	}
+
+	if err := s.RemoveWhitelist(ctx, "919988776655"); err != nil {
+		t.Fatalf("failed to remove whitelist: %v", err)
+	}
+
+	ok, err = s.IsWhitelisted(ctx, "919988776655")
+	if err != nil {
+		t.Fatalf("unexpected error checking whitelist: %v", err)
+	}
+	if ok {
+		t.Fatal("expected not whitelisted after removal")
+	}
+}
+
 func TestCommands(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()

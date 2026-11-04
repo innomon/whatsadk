@@ -476,6 +476,12 @@ type surrealBlacklist struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type surrealWhitelist struct {
+	Phone     string    `json:"phone"`
+	Reason    string    `json:"reason"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 func (s *surrealStore) IsBlacklisted(ctx context.Context, phone string) (bool, error) {
 	recordID := fmt.Sprintf("blacklisted_numbers:%s", phone)
 	res, err := surrealdb.Query[[]surrealBlacklist](ctx, s.db,
@@ -525,6 +531,61 @@ func (s *surrealStore) ListBlacklist(ctx context.Context) ([]BlacklistedNumber, 
 				Phone:     sb.Phone,
 				Reason:    sb.Reason,
 				CreatedAt: sb.CreatedAt,
+			})
+		}
+	}
+	return numbers, nil
+}
+
+func (s *surrealStore) IsWhitelisted(ctx context.Context, phone string) (bool, error) {
+	recordID := fmt.Sprintf("whitelisted_numbers:%s", phone)
+	res, err := surrealdb.Query[[]surrealWhitelist](ctx, s.db,
+		"SELECT * FROM type::record($record_id)", map[string]interface{}{"record_id": recordID})
+	if err != nil {
+		return false, fmt.Errorf("check whitelist: %w", err)
+	}
+
+	if res != nil && len(*res) > 0 && len((*res)[0].Result) > 0 {
+		return true, nil
+	}
+	return false, nil
+}
+
+func (s *surrealStore) AddWhitelist(ctx context.Context, phone, reason string) error {
+	recordID := fmt.Sprintf("whitelisted_numbers:%s", phone)
+	_, err := surrealdb.Query[interface{}](ctx, s.db,
+		"UPSERT type::record($record_id) SET phone = $phone, reason = $reason, created_at = $created_at",
+		map[string]interface{}{
+			"record_id":  recordID,
+			"phone":      phone,
+			"reason":     reason,
+			"created_at": time.Now().UTC(),
+		},
+	)
+	return err
+}
+
+func (s *surrealStore) RemoveWhitelist(ctx context.Context, phone string) error {
+	recordID := fmt.Sprintf("whitelisted_numbers:%s", phone)
+	_, err := surrealdb.Query[interface{}](ctx, s.db,
+		"DELETE FROM type::record($record_id)", map[string]interface{}{"record_id": recordID})
+	return err
+}
+
+func (s *surrealStore) ListWhitelist(ctx context.Context) ([]WhitelistedNumber, error) {
+	res, err := surrealdb.Query[[]surrealWhitelist](ctx, s.db,
+		"SELECT * FROM whitelisted_numbers ORDER BY created_at DESC", nil)
+	if err != nil {
+		return nil, fmt.Errorf("list whitelist: %w", err)
+	}
+
+	var numbers []WhitelistedNumber
+	if res != nil && len(*res) > 0 {
+		for _, sw := range (*res)[0].Result {
+			numbers = append(numbers, WhitelistedNumber{
+				Phone:     sw.Phone,
+				Reason:    sw.Reason,
+				CreatedAt: sw.CreatedAt,
 			})
 		}
 	}

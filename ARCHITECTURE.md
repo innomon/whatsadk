@@ -246,6 +246,8 @@ Handles phone number verification flows:
    - Validates HMAC-SHA256 signature against tenant secret using constant-time `hmac.Equal`
    - POSTs payload (`{"from": "...", "body": "..."}`) to app's configured `webhook_url` signed with `X-Signature-256` (`HMAC-SHA256(secret, timestamp + "." + body)`) and `X-Signature-Timestamp` for anti-spoofing and anti-replay protection
    - Responds to the sender with tenant `success_message` and logs audit entry into `filesys` (`whatsmeow/<userID>/<uniqueID>/verification`)
+   - Automatically registers verified phone number into `whitelisted_numbers` database storage (SQLite-P2P / PostgreSQL / SurrealDB)
+   - Rejects blacklisted numbers attempting verification with an explicit rejection reply (`messages.blacklisted`) and audit record
    - Exits early to avoid forwarding verification payloads to ADK agents
 
 ### Simulators — Testing Tools

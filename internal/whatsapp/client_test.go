@@ -219,5 +219,84 @@ func TestClient_HandleMessage_HMACVerification(t *testing.T) {
 	if !strings.Contains(string(rec.Content), "VERIFY_MSG_001") {
 		t.Errorf("expected audit record to contain uniqueID, got %s", string(rec.Content))
 	}
+
+	// Verify verified user was auto-whitelisted in store
+	whitelisted, err := st.IsWhitelisted(ctx, senderPhone)
+	if err != nil {
+		t.Fatalf("failed to check store whitelist: %v", err)
+	}
+	if !whitelisted {
+		t.Errorf("expected verified user %s to be auto-whitelisted in store", senderPhone)
+	}
+}
+
+func TestClient_HandleMessage_BlacklistVerificationRejection(t *testing.T) {
+	ctx := context.Background()
+
+	st, err := store.Open("sqlite-p2p://:memory:")
+	if err != nil {
+		t.Fatalf("failed to open memory store: %v", err)
+	}
+	defer st.Close()
+
+	blacklistedPhone := "919999988888"
+	if err := st.AddBlacklist(ctx, blacklistedPhone, "abusive user"); err != nil {
+		t.Fatalf("failed to add to blacklist: %v", err)
+	}
+
+	vCfg := config.VerificationConfig{
+		Enabled: true,
+		Messages: config.VerificationMessages{
+			Blacklisted: "🚫 This number has been blocked.",
+		},
+	}
+
+	cfg := &config.Config{
+		WhatsApp: config.WhatsAppConfig{
+			StoreDSN: "sqlite-p2p://:memory:",
+		},
+		Verification: vCfg,
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	vHandler := verification.NewHandler(nil, nil, st, vCfg, http.DefaultClient, logger)
+
+	client, err := New(ctx, cfg, nil, vHandler, nil, st)
+	if err != nil {
+		t.Fatalf("failed to create client: %v", err)
+	}
+
+	senderJID := types.NewJID(blacklistedPhone, types.DefaultUserServer)
+	uniqueID := "BLACK_MSG_001"
+	verifyMsg := "VERIFY kb:token123:1700000000:sig123"
+
+	msgEvt := &events.Message{
+		Info: types.MessageInfo{
+			ID:        uniqueID,
+			Timestamp: time.Now(),
+			MessageSource: types.MessageSource{
+				Chat:   senderJID,
+				Sender: senderJID,
+			},
+		},
+		Message: &waE2E.Message{
+			Conversation: proto.String(verifyMsg),
+		},
+	}
+
+	client.handleMessage(msgEvt)
+
+	// Verify audit record was created indicating rejection due to blacklist
+	auditPath := fmt.Sprintf("whatsmeow/%s/%s/verification", blacklistedPhone, uniqueID)
+	rec, err := st.GetFile(ctx, auditPath)
+	if err != nil {
+		t.Fatalf("failed to get verification audit from filesys: %v", err)
+	}
+	if rec == nil {
+		t.Fatal("expected verification audit record for blacklisted rejection")
+	}
+	if !strings.Contains(string(rec.Content), "blocked") {
+		t.Errorf("expected audit record to contain 'blocked', got %s", string(rec.Content))
+	}
 }
 

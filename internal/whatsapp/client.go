@@ -567,6 +567,8 @@ func (c *Client) handleMessage(msg *events.Message) {
 
 	c.log.Infof("Received message from %s: %s", displayID, truncate(text, 80))
 
+	isVerificationMsg := c.verifyHandler != nil && (auth.IsVerificationToken(text) != nil || verification.IsHMACVerificationMessage(text))
+
 	// Global Blacklist Check
 	if c.store != nil {
 		ctx := context.Background()
@@ -578,6 +580,15 @@ func (c *Client) handleMessage(msg *events.Message) {
 
 		if blocked {
 			c.log.Warnf("Blocking message from blacklisted user: %s", displayID)
+			if isVerificationMsg {
+				// Send explicit rejection response to blacklisted user attempting verification
+				rejectMsg := c.cfg.Verification.Messages.Blacklisted
+				if rejectMsg == "" {
+					rejectMsg = "🚫 This number has been blocked."
+				}
+				c.sendTextMessage(ctx, msg.Info.Chat, userID, uniqueID, rejectMsg, "system", uniqueID)
+				c.storeVerificationAudit(ctx, userID, uniqueID, text, rejectMsg)
+			}
 			return
 		}
 	}
@@ -596,6 +607,15 @@ func (c *Client) handleMessage(msg *events.Message) {
 		if response != "" {
 			c.sendTextMessage(ctx, msg.Info.Chat, userID, uniqueID, response, "system", uniqueID)
 			c.storeVerificationAudit(ctx, userID, uniqueID, text, response)
+
+			// If verification succeeded, automatically persist the number to store whitelist
+			if c.store != nil && isSuccessfulVerificationResponse(response, c.cfg.Verification) {
+				if err := c.store.AddWhitelist(ctx, userID, "verified"); err != nil {
+					c.log.Errorf("Failed to auto-whitelist verified user %s: %v", userID, err)
+				} else {
+					c.log.Infof("Successfully auto-whitelisted verified user: %s", userID)
+				}
+			}
 			return
 		}
 		if verification.IsHMACVerificationMessage(text) {
@@ -889,14 +909,26 @@ func (c *Client) isUserAllowed(jid types.JID) bool {
 		}
 	}
 
-	// 1. If whitelisting is active, check it
+	// 1. If whitelisting is active in config, check it
 	if len(c.cfg.WhatsApp.WhitelistedUsers) > 0 {
 		if c.cfg.IsUserWhitelisted(jid.User) || c.cfg.IsUserWhitelisted(jid.String()) {
 			return true
 		}
 	} else {
-		// 2. If NO whitelisting is active, we allow everyone except if we want to enforce 91 prefix
+		// 2. If NO whitelisting is active in config, check dynamic store whitelist or allow default
+		if c.store != nil {
+			if ok, _ := c.store.IsWhitelisted(context.Background(), jid.User); ok {
+				return true
+			}
+		}
 		return true
+	}
+
+	// 2b. Check dynamic database whitelist when static whitelist is configured
+	if c.store != nil {
+		if ok, _ := c.store.IsWhitelisted(context.Background(), jid.User); ok {
+			return true
+		}
 	}
 
 	// 3. Fallback to country check if whitelist exists but user is not in it
@@ -975,4 +1007,33 @@ func (c *Client) resolveLID(ctx context.Context, lid types.JID) types.JID {
 	}
 
 	return lid
+}
+
+func isSuccessfulVerificationResponse(resp string, cfg config.VerificationConfig) bool {
+	if resp == "" {
+		return false
+	}
+	// Check against error messages
+	if cfg.Messages.Error != "" && resp == cfg.Messages.Error {
+		return false
+	}
+	if cfg.Messages.Expired != "" && resp == cfg.Messages.Expired {
+		return false
+	}
+	if cfg.Messages.PhoneMismatch != "" && resp == cfg.Messages.PhoneMismatch {
+		return false
+	}
+	if cfg.Messages.Blacklisted != "" && resp == cfg.Messages.Blacklisted {
+		return false
+	}
+	// Check against app success messages or standard success
+	for _, app := range cfg.Apps {
+		if app.SuccessMessage != "" && resp == app.SuccessMessage {
+			return true
+		}
+	}
+	if cfg.Messages.Success != "" && resp == cfg.Messages.Success {
+		return true
+	}
+	return true
 }

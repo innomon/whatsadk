@@ -59,6 +59,14 @@ SELECT
     json_extract(metadata, '$.created_at') AS created_at
 FROM crm_store
 WHERE key LIKE 'whatsadk:blacklist:%';
+
+CREATE VIEW IF NOT EXISTS whitelisted_numbers AS
+SELECT
+    substr(key, 20) AS phone,
+    json_extract(metadata, '$.reason') AS reason,
+    json_extract(metadata, '$.created_at') AS created_at
+FROM crm_store
+WHERE key LIKE 'whatsadk:whitelist:%';
 `
 
 // Options configures the whatsadk storage backend.

@@ -2,6 +2,8 @@
 
 This file acts as a registry for the development tracks of the WhatsADK project.
 
+- [x] [verification_whitelist_and_blacklist_rejection_20261104](conductor/tracks/verification_whitelist_and_blacklist_rejection_20261104/) - Verification Database Auto-Whitelisting & Blacklist Explicit Rejection.
+
 ---
 
 ## Completed Tracks

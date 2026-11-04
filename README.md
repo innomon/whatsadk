@@ -517,6 +517,8 @@ VERIFY kb:a1b2c3d4e5f6:1700000000:7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677
   - Header `X-Signature-256`: `sha256=<hex>` computed as `HMAC-SHA256(secret, timestamp + "." + request_body)`.
   - The tenant webhook receiver should verify `X-Signature-256` using constant-time comparison and verify that `abs(now - X-Signature-Timestamp)` is within tolerance (e.g. 5 minutes).
 - **Response & Audit:** The gateway replies to the user with the tenant's configured `success_message` and saves an audit record to `filesys` (`whatsmeow/<userID>/<uniqueID>/verification`).
+- **Database Auto-Whitelisting:** Upon successful verification, the phone number is automatically recorded in the database `whitelisted_numbers` store (SQLite-P2P / PostgreSQL / SurrealDB) and dynamically allowed in message routing.
+- **Blacklist Rejection:** If a blacklisted phone number attempts verification, the gateway responds with an explicit rejection message (`messages.blacklisted`) and records the audit rather than dropping the message silently.
 
 #### Configuration
 

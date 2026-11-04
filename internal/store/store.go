@@ -23,6 +23,10 @@ type storeBackend interface {
 	AddBlacklist(ctx context.Context, phone, reason string) error
 	RemoveBlacklist(ctx context.Context, phone string) error
 	ListBlacklist(ctx context.Context) ([]BlacklistedNumber, error)
+	IsWhitelisted(ctx context.Context, phone string) (bool, error)
+	AddWhitelist(ctx context.Context, phone, reason string) error
+	RemoveWhitelist(ctx context.Context, phone string) error
+	ListWhitelist(ctx context.Context) ([]WhitelistedNumber, error)
 	ListContacts(ctx context.Context, query string) ([]Contact, error)
 	GetFilesysLogs(ctx context.Context, phone string, limit int) ([]FileEntry, error)
 	GetLatestGlobalMessages(ctx context.Context, limit int) ([]FileEntry, error)
@@ -199,6 +203,22 @@ func (s *Store) ListBlacklist(ctx context.Context) ([]BlacklistedNumber, error) 
 	return s.backend.ListBlacklist(ctx)
 }
 
+func (s *Store) IsWhitelisted(ctx context.Context, phone string) (bool, error) {
+	return s.backend.IsWhitelisted(ctx, phone)
+}
+
+func (s *Store) AddWhitelist(ctx context.Context, phone, reason string) error {
+	return s.backend.AddWhitelist(ctx, phone, reason)
+}
+
+func (s *Store) RemoveWhitelist(ctx context.Context, phone string) error {
+	return s.backend.RemoveWhitelist(ctx, phone)
+}
+
+func (s *Store) ListWhitelist(ctx context.Context) ([]WhitelistedNumber, error) {
+	return s.backend.ListWhitelist(ctx)
+}
+
 func (s *Store) ListContacts(ctx context.Context, query string) ([]Contact, error) {
 	return s.backend.ListContacts(ctx, query)
 }
@@ -267,6 +287,17 @@ func (s *Store) ResetSequence(ctx context.Context) error {
 func (s *sqlStore) migrate() error {
 	_, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS blacklisted_numbers (
+			phone TEXT PRIMARY KEY,
+			reason TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)
+	`)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec(`
+		CREATE TABLE IF NOT EXISTS whitelisted_numbers (
 			phone TEXT PRIMARY KEY,
 			reason TEXT NOT NULL DEFAULT '',
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -485,6 +516,61 @@ type BlacklistedNumber struct {
 	Phone     string    `json:"phone"`
 	Reason    string    `json:"reason"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+type WhitelistedNumber struct {
+	Phone     string    `json:"phone"`
+	Reason    string    `json:"reason"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (s *sqlStore) IsWhitelisted(ctx context.Context, phone string) (bool, error) {
+	var exists int
+	err := s.db.QueryRowContext(ctx,
+		"SELECT 1 FROM whitelisted_numbers WHERE phone = $1", phone,
+	).Scan(&exists)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("check whitelist: %w", err)
+	}
+	return true, nil
+}
+
+func (s *sqlStore) AddWhitelist(ctx context.Context, phone, reason string) error {
+	_, err := s.db.ExecContext(ctx,
+		"INSERT INTO whitelisted_numbers (phone, reason, created_at) VALUES ($1, $2, $3) ON CONFLICT (phone) DO NOTHING",
+		phone, reason, time.Now().UTC(),
+	)
+	return err
+}
+
+func (s *sqlStore) RemoveWhitelist(ctx context.Context, phone string) error {
+	_, err := s.db.ExecContext(ctx,
+		"DELETE FROM whitelisted_numbers WHERE phone = $1", phone,
+	)
+	return err
+}
+
+func (s *sqlStore) ListWhitelist(ctx context.Context) ([]WhitelistedNumber, error) {
+	rows, err := s.db.QueryContext(ctx,
+		"SELECT phone, reason, created_at FROM whitelisted_numbers ORDER BY created_at DESC",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list whitelist: %w", err)
+	}
+	defer rows.Close()
+
+	var numbers []WhitelistedNumber
+	for rows.Next() {
+		var n WhitelistedNumber
+		if err := rows.Scan(&n.Phone, &n.Reason, &n.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan whitelist row: %w", err)
+		}
+		numbers = append(numbers, n)
+	}
+	return numbers, rows.Err()
 }
 
 func (s *sqlStore) ListBlacklist(ctx context.Context) ([]BlacklistedNumber, error) {

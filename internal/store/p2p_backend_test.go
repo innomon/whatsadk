@@ -37,7 +37,7 @@ func TestNewBackend_Memory(t *testing.T) {
 	}
 
 	// Verify views exist
-	expectedViews := []string{"filesys", "whatsmeow_contacts", "whatsmeow_commands", "blacklisted_numbers"}
+	expectedViews := []string{"filesys", "whatsmeow_contacts", "whatsmeow_commands", "blacklisted_numbers", "whitelisted_numbers"}
 	for _, view := range expectedViews {
 		var viewName string
 		err = backend.DB().QueryRowContext(ctx, "SELECT name FROM sqlite_master WHERE type='view' AND name=?", view).Scan(&viewName)
@@ -152,5 +152,48 @@ func TestStore_Open_SQLiteP2P(t *testing.T) {
 	}
 	if len(cmds) != 1 || cmds[0].ID != 1 {
 		t.Fatalf("expected 1 command with id 1, got %+v", cmds)
+	}
+
+	// 4. Test Whitelist operations
+	isWhitelisted, err := st.IsWhitelisted(ctx, "+15559876543")
+	if err != nil {
+		t.Fatalf("IsWhitelisted failed: %v", err)
+	}
+	if isWhitelisted {
+		t.Fatal("expected phone not to be whitelisted initially")
+	}
+
+	err = st.AddWhitelist(ctx, "+15559876543", "verified via kb")
+	if err != nil {
+		t.Fatalf("AddWhitelist failed: %v", err)
+	}
+
+	isWhitelisted, err = st.IsWhitelisted(ctx, "+15559876543")
+	if err != nil {
+		t.Fatalf("IsWhitelisted check failed: %v", err)
+	}
+	if !isWhitelisted {
+		t.Fatal("expected phone to be whitelisted")
+	}
+
+	wList, err := st.ListWhitelist(ctx)
+	if err != nil {
+		t.Fatalf("ListWhitelist failed: %v", err)
+	}
+	if len(wList) != 1 || wList[0].Phone != "+15559876543" {
+		t.Fatalf("unexpected whitelist contents: %+v", wList)
+	}
+
+	err = st.RemoveWhitelist(ctx, "+15559876543")
+	if err != nil {
+		t.Fatalf("RemoveWhitelist failed: %v", err)
+	}
+
+	isWhitelisted, err = st.IsWhitelisted(ctx, "+15559876543")
+	if err != nil {
+		t.Fatalf("IsWhitelisted after removal failed: %v", err)
+	}
+	if isWhitelisted {
+		t.Fatal("expected phone to not be whitelisted after removal")
 	}
 }
