@@ -136,6 +136,9 @@ The launcher automatically detects the host OS (`uname -s`) and CPU architecture
 | `P2P_SWARM_TOPIC` | No | P2P swarm discovery topic |
 | `P2P_SWARM_PORT` | No | P2P swarm listener port (default: 0 for dynamic) |
 | `P2P_DB_PATH` | No | Database file path for SQLite P2P (default: `data/whatsadk_p2p.db`) |
+| `P2P_DEFAULT_TABLE` | No | Default KV repository table for SQLite P2P (default: `crm_store`) |
+| `P2P_INCLUDE_TABLES` | No | Comma-separated list of user tables to include in P2P CDC replication |
+| `P2P_EXCLUDE_TABLES` | No | Comma-separated list of user tables to exclude from P2P CDC replication |
 | `P2P_ENABLE_WAL` | No | Enable Write-Ahead Logging for SQLite P2P (default: `true`) |
 | `P2P_ENABLE_CRYPTO` | No | Enable cryptographic key registry encryption (`true`) |
 | `P2P_AUTO_SYNC` | No | Enable automated P2P replication synchronization (default: `true`) |
@@ -181,6 +184,9 @@ p2p:
     - "192.168.1.100:43219"
   peer_addrs: []
   db_path: "data/whatsadk_p2p.db"
+  default_table: "crm_store"
+  include_tables: []
+  exclude_tables: []
   enable_wal: true
   enable_crypto: false
   auto_sync: true

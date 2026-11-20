@@ -33,6 +33,9 @@ adk:
 #    - "192.168.1.100:43219"
 #  peer_addrs: []
 #  db_path: "data/whatsadk_p2p.db"
+#  default_table: "crm_store"
+#  include_tables: []
+#  exclude_tables: []
 #  enable_wal: true
 #  enable_crypto: false
 #  auto_sync: true

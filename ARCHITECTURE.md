@@ -348,6 +348,7 @@ SPA (Browser)                  WhatsApp User             Gateway                
 | [whatsmeow](https://github.com/tulir/whatsmeow) | WhatsApp Web multi-device API (WebSocket) |
 | [lib/pq](https://github.com/lib/pq) | PostgreSQL driver for WhatsApp session persistence |
 | [surrealdb.go](https://github.com/surrealdb/surrealdb.go) | Go client for SurrealDB backend persistence |
+| `sqlite-p2p` | Pure-Go decentralized SQLite engine with multi-table trigger CDC (`_p2p_cdc_outbox`), table-scoped LWW, and automatic `whatsmeow_*` E2EE table exclusion |
 | [golang-jwt/jwt/v5](https://github.com/golang-jwt/jwt) | RS256 & EdDSA JWT token generation and parsing |
 | [qrterminal](https://github.com/mdp/qrterminal) | QR code rendering in terminal |
 | [yaml.v3](https://pkg.go.dev/gopkg.in/yaml.v3) | YAML configuration parsing |

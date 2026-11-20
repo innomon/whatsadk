@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -15,9 +16,36 @@ import (
 	"sqlite-p2p/pkg/p2p"
 )
 
-// DDL for SQLite views projecting unified crm_store into whatsadk compatible schemas.
-const viewsDDL = `
-CREATE VIEW IF NOT EXISTS filesys AS
+// DefaultWhatsmeowExcludeTables lists all local whatsmeow E2EE Signal protocol and session
+// tables that must never be auto-discovered or replicated across the P2P swarm.
+var DefaultWhatsmeowExcludeTables = []string{
+	"whatsmeow_device",
+	"whatsmeow_identity_keys",
+	"whatsmeow_pre_keys",
+	"whatsmeow_sessions",
+	"whatsmeow_sender_keys",
+	"whatsmeow_app_state_sync_keys",
+	"whatsmeow_app_state_version",
+	"whatsmeow_app_state_mutation_macs",
+	"whatsmeow_contacts",
+	"whatsmeow_chat_settings",
+	"whatsmeow_message_secrets",
+	"whatsmeow_privacy_tokens",
+	"whatsmeow_lid_map",
+	"whatsmeow_event_buffer",
+	"whatsmeow_version",
+}
+
+type viewDef struct {
+	name string
+	ddl  string
+}
+
+// whatsadkViews defines SQLite views projecting unified crm_store into whatsadk compatible schemas.
+var whatsadkViews = []viewDef{
+	{
+		name: "filesys",
+		ddl: `CREATE VIEW IF NOT EXISTS filesys AS
 SELECT
     substr(key, 18) AS path,
     CASE 
@@ -27,9 +55,11 @@ SELECT
     data AS content,
     json_extract(metadata, '$._tmstamp') AS tmstamp
 FROM crm_store
-WHERE key LIKE 'whatsadk:filesys:%';
-
-CREATE VIEW IF NOT EXISTS whatsmeow_contacts AS
+WHERE key LIKE 'whatsadk:filesys:%';`,
+	},
+	{
+		name: "whatsmeow_contacts",
+		ddl: `CREATE VIEW IF NOT EXISTS whatsmeow_contacts AS
 SELECT
     json_extract(metadata, '$.our_jid') AS our_jid,
     json_extract(metadata, '$.their_jid') AS their_jid,
@@ -38,9 +68,11 @@ SELECT
     json_extract(metadata, '$.push_name') AS push_name,
     json_extract(metadata, '$.business_name') AS business_name
 FROM crm_store
-WHERE key LIKE 'whatsadk:contact:%';
-
-CREATE VIEW IF NOT EXISTS whatsmeow_commands AS
+WHERE key LIKE 'whatsadk:contact:%';`,
+	},
+	{
+		name: "whatsmeow_commands",
+		ddl: `CREATE VIEW IF NOT EXISTS whatsmeow_commands AS
 SELECT
     CAST(json_extract(metadata, '$.id') AS INTEGER) AS id,
     json_extract(metadata, '$.command') AS command,
@@ -50,24 +82,71 @@ SELECT
     json_extract(metadata, '$.created_at') AS created_at,
     json_extract(metadata, '$.updated_at') AS updated_at
 FROM crm_store
-WHERE key LIKE 'whatsadk:command:%';
-
-CREATE VIEW IF NOT EXISTS blacklisted_numbers AS
+WHERE key LIKE 'whatsadk:command:%';`,
+	},
+	{
+		name: "blacklisted_numbers",
+		ddl: `CREATE VIEW IF NOT EXISTS blacklisted_numbers AS
 SELECT
     substr(key, 20) AS phone,
     json_extract(metadata, '$.reason') AS reason,
     json_extract(metadata, '$.created_at') AS created_at
 FROM crm_store
-WHERE key LIKE 'whatsadk:blacklist:%';
-
-CREATE VIEW IF NOT EXISTS whitelisted_numbers AS
+WHERE key LIKE 'whatsadk:blacklist:%';`,
+	},
+	{
+		name: "whitelisted_numbers",
+		ddl: `CREATE VIEW IF NOT EXISTS whitelisted_numbers AS
 SELECT
     substr(key, 20) AS phone,
     json_extract(metadata, '$.reason') AS reason,
     json_extract(metadata, '$.created_at') AS created_at
 FROM crm_store
-WHERE key LIKE 'whatsadk:whitelist:%';
-`
+WHERE key LIKE 'whatsadk:whitelist:%';`,
+	},
+}
+
+func initWhatsadkViews(db *sql.DB) error {
+	for _, v := range whatsadkViews {
+		var existingTable int
+		err := db.QueryRow(
+			`SELECT COUNT(1) FROM sqlite_master WHERE type = 'table' AND lower(name) = lower(?)`,
+			v.name,
+		).Scan(&existingTable)
+		if err == nil && existingTable > 0 {
+			// A physical table with this name already exists (e.g. co-located whatsmeow_contacts); skip view creation.
+			continue
+		}
+		if _, err := db.Exec(v.ddl); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func mergeExcludeTables(existing []string) []string {
+	seen := make(map[string]bool, len(existing)+len(DefaultWhatsmeowExcludeTables))
+	merged := make([]string, 0, len(existing)+len(DefaultWhatsmeowExcludeTables))
+	for _, t := range existing {
+		trimmed := strings.TrimSpace(t)
+		if trimmed == "" {
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		if !seen[lower] {
+			seen[lower] = true
+			merged = append(merged, trimmed)
+		}
+	}
+	for _, t := range DefaultWhatsmeowExcludeTables {
+		lower := strings.ToLower(t)
+		if !seen[lower] {
+			seen[lower] = true
+			merged = append(merged, t)
+		}
+	}
+	return merged
+}
 
 // Options configures the whatsadk storage backend.
 type Options struct {
@@ -118,17 +197,17 @@ func NewBackend(opts Options) (*Backend, error) {
 		ownsDB = true
 	}
 
-	// Initialize views for whatsadk SQL compatibility
-	if _, err := db.Exec(viewsDDL); err != nil {
+	repo := opts.Repo
+	if repo == nil {
+		repo = p2p.NewRepository(db)
+	}
+
+	// Initialize views for whatsadk SQL compatibility after crm_store exists
+	if err := initWhatsadkViews(db); err != nil {
 		if ownsDB {
 			_ = db.Close()
 		}
 		return nil, fmt.Errorf("failed to create whatsadk views: %w", err)
-	}
-
-	repo := opts.Repo
-	if repo == nil {
-		repo = p2p.NewRepository(db)
 	}
 
 	tracker := opts.Tracker
@@ -207,6 +286,23 @@ func (b *Backend) Engine() *p2p.Engine {
 	return b.p2pEngine
 }
 
+// DrainCDCOutbox triggers an immediate scan for newly created SQLite tables and drains
+// pending CDC outbox mutations into the Hypercore feed and P2P swarm.
+func (b *Backend) DrainCDCOutbox(ctx context.Context) (int, error) {
+	b.mu.RLock()
+	p2pEng := b.p2pEngine
+	replEng := b.engine
+	b.mu.RUnlock()
+
+	if p2pEng != nil {
+		return p2pEng.DrainCDCOutbox(ctx)
+	}
+	if replEng != nil {
+		return replEng.DrainCDCOutbox(ctx)
+	}
+	return 0, nil
+}
+
 // Close closes the underlying SQLite database or P2P engine if owned by this Backend.
 func (b *Backend) Close() error {
 	b.mu.Lock()
@@ -226,6 +322,8 @@ func OpenP2PFromNodeConfig(cfg *p2pconfig.NodeConfig) (*Store, error) {
 	if cfg == nil {
 		return nil, errors.New("node config cannot be nil")
 	}
+
+	cfg.ExcludeTables = mergeExcludeTables(cfg.ExcludeTables)
 
 	pol, err := cfg.BuildPolicy()
 	if err != nil {

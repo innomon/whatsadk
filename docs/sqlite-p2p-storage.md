@@ -38,6 +38,9 @@ p2p:
     - "192.168.1.100:43219"
   peer_addrs: []
   db_path: "data/whatsadk_p2p.db"
+  default_table: "crm_store"
+  include_tables: []
+  exclude_tables: []
   enable_wal: true
   enable_crypto: false
   auto_sync: true
@@ -56,6 +59,9 @@ p2p:
 - `P2P_SWARM_TOPIC`: Discovery topic
 - `P2P_SWARM_PORT`: P2P listener port (0 for random)
 - `P2P_DB_PATH`: Database file path
+- `P2P_DEFAULT_TABLE`: Default KV repository table name (default: `crm_store`)
+- `P2P_INCLUDE_TABLES`: Comma-separated list of user tables to include in multi-table CDC replication
+- `P2P_EXCLUDE_TABLES`: Comma-separated list of user tables to exclude from multi-table CDC replication
 - `P2P_ENABLE_WAL`: `true` or `false`
 - `P2P_ENABLE_CRYPTO`: `true` or `false`
 - `P2P_AUTO_SYNC`: `true` or `false`
@@ -182,14 +188,20 @@ WhatsADK separates protocol-level WhatsApp session persistence from application-
 
 ---
 
-## 5. SQL Compatibility Views
+## 5. SQL Compatibility Views, Multi-Table CDC & Protocol Table Isolation
 
-The backend stores all WhatsApp entities inside a unified, generic key-value table (`crm_store`) and projects them via high-performance SQLite views:
+The backend stores all standard WhatsApp gateway entities inside a unified key-value table (`crm_store`) and projects them via SQLite views:
 
 - `filesys`: Virtual filesystem logs and binary media (JPEG, PNG, WebP, MP4, OGG, WAV).
 - `whatsmeow_contacts`: Contact roster entities.
 - `whatsmeow_commands`: Asynchronous command execution queue.
 - `blacklisted_numbers`: Spam and moderation phone blacklist.
+- `whitelisted_numbers`: Verified and whitelisted phone numbers.
+
+### Trigger-Based Multi-Table CDC & Co-Located WAL Sync
+- **Automatic Schema Discovery & Trigger CDC:** `sqlite-p2p` inspects `sqlite_master` (`type = 'table'`) and attaches `AFTER INSERT`, `AFTER UPDATE`, and `AFTER DELETE` triggers (`_p2p_trg_<table>_*`) that populate `_p2p_cdc_outbox` (guarded by `_p2p_sync_state.applying_remote = 0` to prevent replication loops).
+- **Co-Located Process Synchronization:** When `whatsadk-mcp`, `tui`, or `dbutil` runs on the same host as an active Gateway and falls back to direct SQLite WAL mode (`store.Open(dbPath)`), any mutations written to SQLite automatically fire the `_p2p_cdc_outbox` triggers and are drained and broadcasted across the Hyperswarm mesh by the active Gateway's `ReplicationEngine`.
+- **Mandatory `whatsmeow` Protocol Table Exclusion:** `OpenP2PFromNodeConfig` automatically merges `DefaultWhatsmeowExcludeTables` (`whatsmeow_device`, `whatsmeow_identity_keys`, `whatsmeow_pre_keys`, `whatsmeow_sessions`, `whatsmeow_sender_keys`, `whatsmeow_app_state_*`, `whatsmeow_message_secrets`, `whatsmeow_privacy_tokens`, `whatsmeow_lid_map`, `whatsmeow_event_buffer`, `whatsmeow_version`) into `ExcludeTables` so private E2EE Signal keys are never replicated across peers even if a database file is shared.
 
 ---
 

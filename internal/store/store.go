@@ -163,6 +163,17 @@ func (s *Store) PeerCount() int {
 	return 0
 }
 
+// DrainCDCOutbox triggers an immediate CDC outbox drain if backed by SQLite P2P.
+func (s *Store) DrainCDCOutbox(ctx context.Context) (int, error) {
+	if s == nil || s.backend == nil {
+		return 0, nil
+	}
+	if pb, ok := s.backend.(*Backend); ok {
+		return pb.DrainCDCOutbox(ctx)
+	}
+	return 0, nil
+}
+
 func (s *sqlStore) Close() error {
 	return s.db.Close()
 }

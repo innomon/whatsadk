@@ -6,6 +6,7 @@ This file acts as a registry for the development tracks of the WhatsADK project.
 
 ## Completed Tracks
 
+- [x] [sqlite_p2p_multi_table_cdc_realignment_20261120](conductor/archive/sqlite_p2p_multi_table_cdc_realignment_20261120/) - SQLite-P2P Multi-Table CDC & Protocol Table Isolation Realignment.
 - [x] [verification_whitelist_and_blacklist_rejection_20261104](conductor/archive/verification_whitelist_and_blacklist_rejection_20261104/) - Verification Database Auto-Whitelisting & Blacklist Explicit Rejection.
 - [x] [hmac_webhook_outbound_signing_20261104](conductor/archive/hmac_webhook_outbound_signing_20261104/) - HMAC Webhook Outbound Signature Signing & Anti-Spoofing.
 - [x] [multi_tenant_hmac_verification_20261103](conductor/archive/multi_tenant_hmac_verification_20261103/) - Multi-Tenant App Verification Routing with HMAC Validation & Rate Limiting (Approach B).

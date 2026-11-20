@@ -1,0 +1,9 @@
+{
+  "id": "sqlite_p2p_multi_table_cdc_realignment_20261120",
+  "name": "SQLite-P2P Multi-Table CDC & Protocol Table Isolation Realignment",
+  "type": "feature",
+  "status": "completed",
+  "created_at": "2026-11-20T20:43:35+05:30",
+  "updated_at": "2026-11-20T20:52:00+05:30",
+  "description": "Realign WhatsADK config, store backend, E2EE table exclusion guardrails, and TUI SQL handlers with sqlite-p2p multi-table CDC replication architecture."
+}

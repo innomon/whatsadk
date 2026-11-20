@@ -18,16 +18,16 @@ import (
 )
 
 type Config struct {
-	WhatsApp     WhatsAppConfig         `yaml:"whatsapp"`
-	WABA         WABAConfig             `yaml:"waba"`
-	ADK          ADKConfig              `yaml:"adk"`
-	Auth         AuthConfig             `yaml:"auth"`
-	Verification VerificationConfig     `yaml:"verification"`
-	Cron         CronConfig             `yaml:"cron"`
-	SurrealDB    SurrealDBConfig        `yaml:"surrealdb"`
-	P2P          P2PConfig              `yaml:"p2p"`
-	Logging      LoggingConfig          `yaml:"logging"`
-	Commands     []registry.CommandDef  `yaml:"commands"`
+	WhatsApp     WhatsAppConfig        `yaml:"whatsapp"`
+	WABA         WABAConfig            `yaml:"waba"`
+	ADK          ADKConfig             `yaml:"adk"`
+	Auth         AuthConfig            `yaml:"auth"`
+	Verification VerificationConfig    `yaml:"verification"`
+	Cron         CronConfig            `yaml:"cron"`
+	SurrealDB    SurrealDBConfig       `yaml:"surrealdb"`
+	P2P          P2PConfig             `yaml:"p2p"`
+	Logging      LoggingConfig         `yaml:"logging"`
+	Commands     []registry.CommandDef `yaml:"commands"`
 }
 
 type LoggingConfig struct {
@@ -189,17 +189,20 @@ type SurrealDBConfig struct {
 
 // P2PConfig defines the configuration for the embedded SQLite P2P replication engine and node access control.
 type P2PConfig struct {
-	Enabled      bool              `yaml:"enabled" json:"enabled"`
-	NodeID       string            `yaml:"node_id" json:"node_id"`
-	SwarmTopic   string            `yaml:"swarm_topic" json:"swarm_topic"`
-	SwarmPort    int               `yaml:"swarm_port" json:"swarm_port"`
-	Bootstrap    []string          `yaml:"bootstrap" json:"bootstrap"`
-	PeerAddrs    []string          `yaml:"peer_addrs" json:"peer_addrs"`
-	DBPath       string            `yaml:"db_path" json:"db_path"`
-	EnableWAL    bool              `yaml:"enable_wal" json:"enable_wal"`
-	EnableCrypto bool              `yaml:"enable_crypto" json:"enable_crypto"`
-	AutoSync     bool              `yaml:"auto_sync" json:"auto_sync"`
-	Replication  ReplicationConfig `yaml:"replication" json:"replication"`
+	Enabled       bool              `yaml:"enabled" json:"enabled"`
+	NodeID        string            `yaml:"node_id" json:"node_id"`
+	SwarmTopic    string            `yaml:"swarm_topic" json:"swarm_topic"`
+	SwarmPort     int               `yaml:"swarm_port" json:"swarm_port"`
+	Bootstrap     []string          `yaml:"bootstrap" json:"bootstrap"`
+	PeerAddrs     []string          `yaml:"peer_addrs" json:"peer_addrs"`
+	DBPath        string            `yaml:"db_path" json:"db_path"`
+	DefaultTable  string            `yaml:"default_table,omitempty" json:"default_table,omitempty"`
+	IncludeTables []string          `yaml:"include_tables,omitempty" json:"include_tables,omitempty"`
+	ExcludeTables []string          `yaml:"exclude_tables,omitempty" json:"exclude_tables,omitempty"`
+	EnableWAL     bool              `yaml:"enable_wal" json:"enable_wal"`
+	EnableCrypto  bool              `yaml:"enable_crypto" json:"enable_crypto"`
+	AutoSync      bool              `yaml:"auto_sync" json:"auto_sync"`
+	Replication   ReplicationConfig `yaml:"replication" json:"replication"`
 }
 
 // ReplicationConfig defines policy rules and access control lists for P2P replication gating.
@@ -233,16 +236,19 @@ func (p *P2PConfig) ToNodeConfig() *p2pconfig.NodeConfig {
 		}
 	}
 	return &p2pconfig.NodeConfig{
-		NodeID:       p.NodeID,
-		SwarmTopic:   p.SwarmTopic,
-		SwarmPort:    p.SwarmPort,
-		Bootstrap:    p.Bootstrap,
-		PeerAddrs:    p.PeerAddrs,
-		DBPath:       p.DBPath,
-		EnableWAL:    p.EnableWAL,
-		EnableCrypto: p.EnableCrypto,
-		AutoSync:     p.AutoSync,
-		Replication:  p.Replication.ToPolicyConfig(),
+		NodeID:        p.NodeID,
+		SwarmTopic:    p.SwarmTopic,
+		SwarmPort:     p.SwarmPort,
+		Bootstrap:     p.Bootstrap,
+		PeerAddrs:     p.PeerAddrs,
+		DBPath:        p.DBPath,
+		DefaultTable:  p.DefaultTable,
+		IncludeTables: append([]string(nil), p.IncludeTables...),
+		ExcludeTables: append([]string(nil), p.ExcludeTables...),
+		EnableWAL:     p.EnableWAL,
+		EnableCrypto:  p.EnableCrypto,
+		AutoSync:      p.AutoSync,
+		Replication:   p.Replication.ToPolicyConfig(),
 	}
 }
 
@@ -587,6 +593,33 @@ func (c *Config) applyEnvOverrides() {
 	}
 	if v := os.Getenv("P2P_DB_PATH"); v != "" {
 		c.P2P.DBPath = v
+	}
+	if v := os.Getenv("P2P_DEFAULT_TABLE"); v != "" {
+		c.P2P.DefaultTable = v
+	}
+	if v := os.Getenv("P2P_INCLUDE_TABLES"); v != "" {
+		parts := strings.Split(v, ",")
+		var tables []string
+		for _, p := range parts {
+			if s := strings.TrimSpace(p); s != "" {
+				tables = append(tables, s)
+			}
+		}
+		if len(tables) > 0 {
+			c.P2P.IncludeTables = tables
+		}
+	}
+	if v := os.Getenv("P2P_EXCLUDE_TABLES"); v != "" {
+		parts := strings.Split(v, ",")
+		var tables []string
+		for _, p := range parts {
+			if s := strings.TrimSpace(p); s != "" {
+				tables = append(tables, s)
+			}
+		}
+		if len(tables) > 0 {
+			c.P2P.ExcludeTables = tables
+		}
 	}
 	if v := os.Getenv("P2P_ENABLE_WAL"); v != "" {
 		c.P2P.EnableWAL = v == "true"

@@ -131,5 +131,10 @@ func (b *Backend) QueryFilesys(ctx context.Context, query string, args ...interf
 		}
 		results = append(results, entry)
 	}
-	return results, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	_, _ = b.DrainCDCOutbox(ctx)
+	return results, nil
 }

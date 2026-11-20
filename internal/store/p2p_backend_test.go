@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	p2pconfig "sqlite-p2p/pkg/config"
 	"sqlite-p2p/pkg/p2p"
 )
 
@@ -195,5 +196,56 @@ func TestStore_Open_SQLiteP2P(t *testing.T) {
 	}
 	if isWhitelisted {
 		t.Fatal("expected phone to not be whitelisted after removal")
+	}
+}
+
+func TestNewBackend_CoexistsWithPhysicalWhatsmeowTables(t *testing.T) {
+	ctx := context.Background()
+
+	db, err := p2p.OpenDB(":memory:", false)
+	if err != nil {
+		t.Fatalf("OpenDB failed: %v", err)
+	}
+	defer db.Close()
+
+	// Simulate whatsmeow sqlstore physical tables in the same SQLite DB
+	_, err = db.ExecContext(ctx, `
+		CREATE TABLE whatsmeow_device (jid TEXT PRIMARY KEY, registration_id INTEGER);
+		CREATE TABLE whatsmeow_contacts (our_jid TEXT, their_jid TEXT, full_name TEXT, short_name TEXT, push_name TEXT, business_name TEXT, PRIMARY KEY (our_jid, their_jid));
+	`)
+	if err != nil {
+		t.Fatalf("failed to create simulated whatsmeow tables: %v", err)
+	}
+
+	backend, err := NewBackend(Options{DB: db})
+	if err != nil {
+		t.Fatalf("NewBackend should succeed when physical whatsmeow_contacts table exists: %v", err)
+	}
+	defer backend.Close()
+
+	// Verify OpenP2PFromNodeConfig merges DefaultWhatsmeowExcludeTables
+	cfg := &p2pconfig.NodeConfig{
+		NodeID:        "test-exclude-node",
+		DBPath:        ":memory:",
+		ExcludeTables: []string{"custom_temp"},
+	}
+	st, err := OpenP2PFromNodeConfig(cfg)
+	if err != nil {
+		t.Fatalf("OpenP2PFromNodeConfig failed: %v", err)
+	}
+	defer st.Close()
+
+	foundDevice := false
+	foundCustom := false
+	for _, tbl := range cfg.ExcludeTables {
+		if tbl == "whatsmeow_device" {
+			foundDevice = true
+		}
+		if tbl == "custom_temp" {
+			foundCustom = true
+		}
+	}
+	if !foundDevice || !foundCustom {
+		t.Fatalf("expected ExcludeTables to contain both custom_temp and whatsmeow_device, got %+v", cfg.ExcludeTables)
 	}
 }

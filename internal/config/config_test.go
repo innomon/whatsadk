@@ -151,6 +151,9 @@ func TestP2PConfig_EnvOverrides(t *testing.T) {
 	os.Setenv("P2P_SWARM_TOPIC", "env-mesh")
 	os.Setenv("P2P_SWARM_PORT", "9999")
 	os.Setenv("P2P_DB_PATH", "/tmp/env_p2p.db")
+	os.Setenv("P2P_DEFAULT_TABLE", "ecom_store")
+	os.Setenv("P2P_INCLUDE_TABLES", "crm_store, custom_orders")
+	os.Setenv("P2P_EXCLUDE_TABLES", "temp_cache, debug_logs")
 	os.Setenv("P2P_ENABLE_WAL", "false")
 	os.Setenv("P2P_ENABLE_CRYPTO", "true")
 	os.Setenv("P2P_AUTO_SYNC", "false")
@@ -161,6 +164,9 @@ func TestP2PConfig_EnvOverrides(t *testing.T) {
 		os.Unsetenv("P2P_SWARM_TOPIC")
 		os.Unsetenv("P2P_SWARM_PORT")
 		os.Unsetenv("P2P_DB_PATH")
+		os.Unsetenv("P2P_DEFAULT_TABLE")
+		os.Unsetenv("P2P_INCLUDE_TABLES")
+		os.Unsetenv("P2P_EXCLUDE_TABLES")
 		os.Unsetenv("P2P_ENABLE_WAL")
 		os.Unsetenv("P2P_ENABLE_CRYPTO")
 		os.Unsetenv("P2P_AUTO_SYNC")
@@ -183,6 +189,15 @@ func TestP2PConfig_EnvOverrides(t *testing.T) {
 	if cfg.P2P.DBPath != "/tmp/env_p2p.db" {
 		t.Errorf("expected DBPath '/tmp/env_p2p.db', got %q", cfg.P2P.DBPath)
 	}
+	if cfg.P2P.DefaultTable != "ecom_store" {
+		t.Errorf("expected DefaultTable 'ecom_store', got %q", cfg.P2P.DefaultTable)
+	}
+	if len(cfg.P2P.IncludeTables) != 2 || cfg.P2P.IncludeTables[0] != "crm_store" || cfg.P2P.IncludeTables[1] != "custom_orders" {
+		t.Errorf("unexpected IncludeTables: %+v", cfg.P2P.IncludeTables)
+	}
+	if len(cfg.P2P.ExcludeTables) != 2 || cfg.P2P.ExcludeTables[0] != "temp_cache" || cfg.P2P.ExcludeTables[1] != "debug_logs" {
+		t.Errorf("unexpected ExcludeTables: %+v", cfg.P2P.ExcludeTables)
+	}
 	if cfg.P2P.EnableWAL {
 		t.Error("expected EnableWAL = false from env")
 	}
@@ -194,6 +209,44 @@ func TestP2PConfig_EnvOverrides(t *testing.T) {
 	}
 	if cfg.P2P.Replication.Mode != "whitelist" {
 		t.Errorf("expected Replication.Mode 'whitelist', got %q", cfg.P2P.Replication.Mode)
+	}
+
+	nc := cfg.P2P.ToNodeConfig()
+	if nc.DefaultTable != "ecom_store" {
+		t.Errorf("expected NodeConfig.DefaultTable 'ecom_store', got %q", nc.DefaultTable)
+	}
+	if len(nc.IncludeTables) != 2 || nc.IncludeTables[1] != "custom_orders" {
+		t.Errorf("unexpected NodeConfig.IncludeTables: %+v", nc.IncludeTables)
+	}
+	if len(nc.ExcludeTables) != 2 || nc.ExcludeTables[0] != "temp_cache" {
+		t.Errorf("unexpected NodeConfig.ExcludeTables: %+v", nc.ExcludeTables)
+	}
+}
+
+func TestP2PConfig_MultiTableYAML(t *testing.T) {
+	rawYAML := `
+p2p:
+  enabled: true
+  default_table: "crm_store"
+  include_tables:
+    - "crm_store"
+    - "orders"
+  exclude_tables:
+    - "local_audit"
+`
+	var cfg Config
+	if err := yaml.Unmarshal([]byte(rawYAML), &cfg); err != nil {
+		t.Fatalf("failed to unmarshal yaml: %v", err)
+	}
+	nc := cfg.P2P.ToNodeConfig()
+	if nc.DefaultTable != "crm_store" {
+		t.Errorf("expected DefaultTable 'crm_store', got %q", nc.DefaultTable)
+	}
+	if len(nc.IncludeTables) != 2 || nc.IncludeTables[1] != "orders" {
+		t.Errorf("unexpected IncludeTables: %+v", nc.IncludeTables)
+	}
+	if len(nc.ExcludeTables) != 1 || nc.ExcludeTables[0] != "local_audit" {
+		t.Errorf("unexpected ExcludeTables: %+v", nc.ExcludeTables)
 	}
 }
 
@@ -261,4 +314,3 @@ verification:
 		t.Errorf("expected legacy_app to be RSA, not HMAC")
 	}
 }
-
